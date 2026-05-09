@@ -1,0 +1,7 @@
+node_modules
+.env
+*.log
+chat_history.json
+database.json
+models/
+dist/
