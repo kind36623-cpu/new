@@ -1,4 +1,10 @@
-const API_KEY = import.meta.env.VITE_NEWS_API_KEY || 'pub_07ec3f5b03bc47ab99562d3f8855b97f'; // Provided NewsData.io API Key
+// ── Backend URL ────────────────────────────────────────────────────────────────
+// In development:  Vite proxy rewrites /api → http://localhost:5000
+// In production:   VITE_BACKEND_URL is set in Vercel env vars → your Render URL
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+
+// NewsData.io key still used as a fallback if backend proxy is unavailable
+const API_KEY = import.meta.env.VITE_NEWS_API_KEY || 'pub_07ec3f5b03bc47ab99562d3f8855b97f';
 
 async function fetchSerperImage(query) {
   try {
@@ -30,7 +36,7 @@ const mockNews = [
     content: "For decades, the standard flow of global goods followed a predictable network. However, recent disruptions have catalyzed a dramatic reconfiguration. Analysis of real-time supply chain data reveals major carriers are relying on AI-driven dynamic routing.",
     location: "Global Data",
     color: "blue",
-    coords: [15.0, 65.0] // Indian Ocean region
+    coords: [15.0, 65.0]
   },
   {
     id: "m2",
@@ -43,21 +49,23 @@ const mockNews = [
     content: "Emerging markets are facing unprecedented challenges in cyber security as rapid digitalization outpaces regulatory frameworks. This report examines vulnerability density across Southeast Asia's growing tech hubs.",
     location: "Asia Sector",
     color: "slate",
-    coords: [14.5, 120.9] // Manila / South China Sea
+    coords: [14.5, 120.9]
   }
 ];
 
 export const fetchNewsFeed = async (category = 'world', explicitQuery = null) => {
   const rawCategory = category === 'general' ? 'world' : category;
 
-  // Use NewsData API strictly for the World category
+  // ── World / Top News ───────────────────────────────────────────────────────
+  // Route through backend proxy (keeps API key server-side, works on Vercel)
   if (rawCategory === 'world') {
-    if (!API_KEY) return mockNews;
     try {
-      const response = await fetch(`https://newsdata.io/api/1/news?apikey=${API_KEY}&language=en&category=top`);
-      if (!response.ok) throw new Error("API failed");
+      // Try backend proxy first (works in prod + local)
+      const response = await fetch(`${BACKEND_URL}/api/news/top`);
+      if (!response.ok) throw new Error(`Backend news proxy: ${response.status}`);
       const data = await response.json();
       if (!data.results) return mockNews;
+
       const articles = data.results.map((article, index) => ({
         id: article.article_id || `live-${index}`,
         title: article.title,
@@ -72,7 +80,6 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
         coords: null
       }));
 
-      // Enrich with Serper images if missing
       await Promise.all(articles.map(async (art) => {
         if (!art.thumbnail) {
           art.thumbnail = await fetchSerperImage(art.title);
@@ -80,13 +87,14 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
       }));
 
       return articles;
-    } catch(e) {
-      console.error(e);
+    } catch (e) {
+      console.error('Top news fetch failed:', e);
       return mockNews;
     }
   }
 
-  // Use Google News RSS for Economics, Security, Local, etc.
+  // ── Google News RSS via Backend Proxy ─────────────────────────────────────
+  // The backend (Render) fetches Google RSS server-side — no CORS issues
   try {
     let query = explicitQuery;
     if (!query) {
@@ -100,8 +108,10 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
         query = rawCategory + ' News';
       }
     }
-    const rss = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
-    const res = await fetch(`https://corsproxy.io/?url=${encodeURIComponent(rss)}`);
+
+    // Call our backend RSS proxy — works from both Vercel (prod) and localhost (dev)
+    const res = await fetch(`${BACKEND_URL}/api/news/rss?q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error(`RSS proxy returned ${res.status}`);
     const text = await res.text();
 
     const parser = new DOMParser();
@@ -130,7 +140,6 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
       };
     });
 
-    // Enrich with Serper images if missing
     await Promise.all(rssArticles.map(async (art) => {
       if (!art.thumbnail) {
         art.thumbnail = await fetchSerperImage(art.title);
@@ -143,6 +152,7 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
     return mockNews;
   }
 };
+
 
 /**
  * AI-Powered Intelligence Engine
