@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: kenshiki-backend
+    runtime: node
+    rootDir: kenshiki-backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # ── Set these in the Render dashboard (do NOT commit real keys) ──
+      # - key: FRONTEND_URL
+      #   value: https://your-kenshiki-app.vercel.app
+      # - key: VITE_GROQ_API_KEY
+      #   value: YOUR_GROQ_KEY
+      # - key: VITE_NEWS_API_KEY
+      #   value: YOUR_NEWSDATA_KEY
+      # - key: VITE_TAVILY_API_KEY
+      #   value: YOUR_TAVILY_KEY
+      # - key: VITE_SERPER_API_KEY
+      #   value: YOUR_SERPER_KEY
+      # - key: VITE_PINECONE_API_KEY
+      #   value: YOUR_PINECONE_KEY
+      # - key: VITE_PINECONE_INDEX
+      #   value: kenshiki-rag

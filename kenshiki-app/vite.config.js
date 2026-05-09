@@ -8,7 +8,7 @@ export default defineConfig({
     // Local dev proxy: rewrites /api → Render backend so VITE_BACKEND_URL stays empty
     proxy: {
       '/api': {
-        target: 'https://api-new-1-f617.onrender.com',
+        target: 'https://new-1-943x.onrender.com',
         changeOrigin: true,
       },
     },

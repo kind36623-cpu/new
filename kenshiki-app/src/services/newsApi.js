@@ -98,27 +98,37 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
   try {
     let query = explicitQuery;
     if (!query) {
-      if (rawCategory === 'economic') {
-        query = 'Economy OR Global Finance OR Markets OR Economic';
-      } else if (rawCategory === 'security') {
-        query = 'Global Security OR Military OR Intelligence OR Cybersecurity OR Geopolitics';
-      } else if (rawCategory === 'sports') {
-        query = 'Sports OR Football OR Cricket OR Tennis OR Olympics OR NBA OR FIFA';
-      } else {
-        query = rawCategory + ' News';
-      }
+      // Full category → search query mapping
+      const categoryQueries = {
+        economic:  'Economy OR Global Finance OR Markets OR Trade OR GDP',
+        security:  'Global Security OR Military OR Intelligence OR Cybersecurity OR Geopolitics',
+        sports:    'Sports OR Football OR Cricket OR Tennis OR Olympics OR NBA OR FIFA',
+        cultural:  'Culture OR Arts OR Entertainment OR Cinema OR Music OR Society',
+        local:     'Local News OR Community OR Regional OR City',
+        insight:   'Analysis OR Opinion OR In-depth OR Investigation OR Special Report',
+        technology:'Technology OR AI OR Artificial Intelligence OR Tech OR Innovation',
+        health:    'Health OR Medicine OR WHO OR Disease OR Wellness',
+        science:   'Science OR Space OR NASA OR Research OR Discovery',
+      };
+      query = categoryQueries[rawCategory] || (rawCategory + ' News');
     }
 
     // Call our backend RSS proxy — works from both Vercel (prod) and localhost (dev)
     const res = await fetch(`${BACKEND_URL}/api/news/rss?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error(`RSS proxy returned ${res.status}`);
+
+    if (!res.ok) {
+      // RSS failed (Google blocked) → fallback to NewsData.io via backend
+      console.warn(`RSS proxy failed (${res.status}), falling back to NewsData.io`);
+      throw new Error(`RSS proxy returned ${res.status}`);
+    }
+
     const text = await res.text();
 
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(text, "text/xml");
     const items = Array.from(xmlDoc.querySelectorAll("item")).slice(0, 15);
 
-    if (items.length === 0) return mockNews;
+    if (items.length === 0) throw new Error('Empty RSS feed');
 
     const rssArticles = items.map((item, index) => {
       const descHTML = item.querySelector("description")?.textContent || "";
@@ -147,9 +157,48 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
     }));
 
     return rssArticles;
+
   } catch (error) {
-    console.error("Error fetching live Google RSS news:", error);
-    return mockNews;
+    console.error("Google RSS failed, trying NewsData.io fallback:", error.message);
+
+    // ── Fallback: NewsData.io backend proxy ─────────────────────────────────
+    // Maps categories to NewsData.io category slugs
+    const newsDataCategoryMap = {
+      economic:   'business',
+      security:   'politics',
+      sports:     'sports',
+      cultural:   'entertainment',
+      local:      'top',
+      insight:    'top',
+      technology: 'technology',
+      health:     'health',
+      science:    'science',
+    };
+    const newsDataCategory = newsDataCategoryMap[rawCategory] || 'top';
+
+    try {
+      const fallbackRes = await fetch(`${BACKEND_URL}/api/news/category?cat=${newsDataCategory}`);
+      if (!fallbackRes.ok) throw new Error('NewsData fallback also failed');
+      const fallbackData = await fallbackRes.json();
+      if (!fallbackData.results || fallbackData.results.length === 0) return mockNews;
+
+      return fallbackData.results.map((article, index) => ({
+        id: article.article_id || `fallback-${index}`,
+        title: article.title,
+        source: article.source_id || 'News Feed',
+        publishedAt: article.pubDate || new Date().toISOString(),
+        category: rawCategory.charAt(0).toUpperCase() + rawCategory.slice(1),
+        author: (article.creator && article.creator.length > 0) ? article.creator[0] : 'Analyst Desk',
+        description: article.description || 'No summary available.',
+        location: (article.country && article.country.length > 0) ? article.country[0] : 'Global',
+        thumbnail: article.image_url || null,
+        color: 'blue',
+        coords: null,
+      }));
+    } catch (fallbackError) {
+      console.error("All news sources failed:", fallbackError.message);
+      return mockNews;
+    }
   }
 };
 
