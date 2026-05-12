@@ -54,7 +54,7 @@ export default function Dashboard() {
   };
 
   const calcRead   = (item) => Math.max(2, Math.ceil((item?.description?.length || 200) / 100));
-  const openArticle = (item) => navigate('/article', { state: { article: item } });
+  const openArticle = (item) => navigate('/app/article', { state: { article: item } });
 
   const getRelTime = (d) => {
     if (!d) return '';
@@ -490,7 +490,7 @@ export default function Dashboard() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           {/* Map button */}
                           <button
-                            onClick={() => navigate('/map', { state: { targetArticle: item } })}
+                            onClick={() => navigate('/app/map', { state: { targetArticle: item } })}
                             title="Locate on Map"
                             style={{
                               width: 38, height: 38, borderRadius: 12,

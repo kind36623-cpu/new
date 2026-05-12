@@ -43,7 +43,7 @@ export default function Onboarding() {
     
     // Fully wait for the CSS fade-out animation to complete (1500ms) before snapping router
     setTimeout(() => {
-      navigate('/');
+      navigate('/app');
     }, 1500);
   };
 

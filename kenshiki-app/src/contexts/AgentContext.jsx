@@ -9,26 +9,26 @@ export function useAgent() {
 }
 
 const PAGE_ROUTES = {
-  feed:     '/insight',
-  map:      '/map',
-  article:  '/article',
-  security: '/security',
-  economic: '/economic',
-  cultural: '/cultural',
-  sports:   '/sports',
-  local:    '/local',
+  feed:     '/app/insight',
+  map:      '/app/map',
+  article:  '/app/article',
+  security: '/app/security',
+  economic: '/app/economic',
+  cultural: '/app/cultural',
+  sports:   '/app/sports',
+  local:    '/app/local',
 };
 
 const PAGE_LABELS = {
-  '/':         'the World News Feed',
-  '/insight':  'the World News Feed',
-  '/map':      'the Radar Map',
-  '/article':  'the Article Brief viewer',
-  '/security': 'the Security Intelligence Feed',
-  '/economic': 'the Economic Intelligence Feed',
-  '/cultural': 'the Cultural Intelligence Feed',
-  '/sports':   'the Sports Feed',
-  '/local':    'the Local News Feed',
+  '/app':         'the World News Feed',
+  '/app/insight': 'the World News Feed',
+  '/app/map':     'the Radar Map',
+  '/app/article': 'the Article Brief viewer',
+  '/app/security':'the Security Intelligence Feed',
+  '/app/economic':'the Economic Intelligence Feed',
+  '/app/cultural':'the Cultural Intelligence Feed',
+  '/app/sports':  'the Sports Feed',
+  '/app/local':   'the Local News Feed',
 };
 
 export function AgentProvider({ children }) {
@@ -154,7 +154,7 @@ export function AgentProvider({ children }) {
           speak(`Searching the map for ${args.query} right now!`);
           updateReplyAndHistory(`Map search: ${args.query}`);
         } else {
-          navigate('/map');
+          navigate('/app/map');
           speak(`Opening the map and searching for ${args.query}. One sec!`);
           updateReplyAndHistory(`Opening map for: ${args.query}`);
           sessionStorage.setItem('agent_pending_map_search', args.query);

@@ -575,7 +575,7 @@ export default function ArticleView() {
     if (!article) return;
     const loadMemory = async () => {
       try {
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+        const baseUrl = import.meta.env.VITE_BACKEND_URL || '';
         const res = await fetch(`${baseUrl}/api/chat/memory/${article.id}`);
         if (!res.ok) return;
         const data = await res.json();
@@ -592,7 +592,7 @@ export default function ArticleView() {
   useEffect(() => {
     // Only save if it's more than the original intro message to prevent DB flooding
     if (article && chatMessages.length > 1) {
-       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+       const baseUrl = import.meta.env.VITE_BACKEND_URL || '';
        fetch(`${baseUrl}/api/chat/memory`, {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
@@ -883,7 +883,7 @@ export default function ArticleView() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', background: '#f8f9fa', borderRadius: 16, border: '1px solid #e8eaed' }}>
                         <div style={{ fontWeight: 600, color: '#202124' }}>{msg.text}</div>
                         <button
-                          onClick={() => navigate('/map', { state: { searchPlace: { name: msg.location, lat: Number(msg.lat), lon: Number(msg.lng) } } })}
+                          onClick={() => navigate('/app/map', { state: { searchPlace: { name: msg.location, lat: Number(msg.lat), lon: Number(msg.lng) } } })}
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#1a73e8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: 700, fontSize: 12, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(26,115,232,0.3)' }}
                           onMouseEnter={e => e.currentTarget.style.background = '#1557b0'}
                           onMouseLeave={e => e.currentTarget.style.background = '#1a73e8'}
@@ -1098,7 +1098,7 @@ export default function ArticleView() {
             </div>
           </div>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/app')}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 28px', borderRadius: 14, border: 'none', cursor: 'pointer', background: 'linear-gradient(135deg, #7c3aed, #4285F4)', color: '#fff', fontWeight: 700, fontSize: 14, boxShadow: '0 8px 24px rgba(124,58,237,0.3)', fontFamily: 'inherit', transition: 'all 0.2s' }}
             onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
             onMouseLeave={e => e.currentTarget.style.transform = 'none'}

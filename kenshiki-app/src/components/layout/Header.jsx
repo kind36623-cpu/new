@@ -60,7 +60,7 @@ export default function Header() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
 
         {/* Kenshiki Logo */}
-        <NavLink to="/" style={{ textDecoration: 'none', marginRight: 18 }}>
+        <NavLink to="/app" style={{ textDecoration: 'none', marginRight: 18 }}>
           <span style={{
             fontFamily: "'Cinzel', 'Trajan Pro', serif",
             fontSize: 26, fontWeight: 700, letterSpacing: '0.08em',
@@ -78,7 +78,7 @@ export default function Header() {
         </NavLink>
 
         {/* ── FEED ── */}
-        <NavLink to="/insight" style={({ isActive }) => ({
+        <NavLink to="/app/insight" style={({ isActive }) => ({
           ...navPill(isActive, '#6d28d9', '#ede9fe'),
           background: isActive ? 'linear-gradient(135deg,#ede9fe,#f3f0ff)' : 'transparent',
         })}>
@@ -96,7 +96,7 @@ export default function Header() {
         </NavLink>
 
         {/* ── RADAR ── */}
-        <NavLink to="/map" style={({ isActive }) => ({
+        <NavLink to="/app/map" style={({ isActive }) => ({
           ...navPill(isActive, '#059669', '#d1fae5'),
           background: isActive ? 'linear-gradient(135deg,#d1fae510,#ecfdf5)' : 'transparent',
         })}>
@@ -114,7 +114,7 @@ export default function Header() {
         </NavLink>
 
         {/* ── BRIEF ── */}
-        <NavLink to="/article" style={({ isActive }) => ({
+        <NavLink to="/app/article" style={({ isActive }) => ({
           ...navPill(isActive, '#7c3aed', '#f3f0ff'),
           background: isActive ? 'linear-gradient(135deg,#f3f0ff,#ede9fe)' : 'transparent',
         })}>

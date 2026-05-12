@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   GoogleAuthProvider,
   OAuthProvider,
   signInWithPopup,
-  signOut 
+  signOut,
 } from 'firebase/auth';
 import { auth } from '../firebase';
 
@@ -20,35 +21,23 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Sign up wrapper (useful if account doesn't exist during dev)
   async function signup(email, password) {
     return createUserWithEmailAndPassword(auth, email, password);
   }
 
-  // Login wrapper
   async function login(email, password) {
-    try {
-      return await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-      // For seamless demo access, auto-create account if user-not-found
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
-        try {
-          return await signup(email, password);
-        } catch (signupError) {
-          throw signupError;
-        }
-      }
-      throw error;
-    }
+    return signInWithEmailAndPassword(auth, email, password);
   }
 
-  // Google Login
+  async function resetPassword(email) {
+    return sendPasswordResetEmail(auth, email);
+  }
+
   function loginWithGoogle() {
     const provider = new GoogleAuthProvider();
     return signInWithPopup(auth, provider);
   }
 
-  // Apple Login
   function loginWithApple() {
     const provider = new OAuthProvider('apple.com');
     provider.addScope('email');
@@ -56,7 +45,6 @@ export function AuthProvider({ children }) {
     return signInWithPopup(auth, provider);
   }
 
-  // Logout wrapper
   function logout() {
     return signOut(auth);
   }
@@ -66,7 +54,6 @@ export function AuthProvider({ children }) {
       setCurrentUser(user);
       setLoading(false);
     });
-
     return unsubscribe;
   }, []);
 
@@ -74,9 +61,10 @@ export function AuthProvider({ children }) {
     currentUser,
     login,
     signup,
+    resetPassword,
     loginWithGoogle,
     loginWithApple,
-    logout
+    logout,
   };
 
   return (

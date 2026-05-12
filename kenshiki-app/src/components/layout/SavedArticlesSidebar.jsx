@@ -30,7 +30,7 @@ export default function SavedArticlesSidebar() {
   };
 
   const handleOpen = (item) => {
-    navigate('/article', {
+    navigate('/app/article', {
       state: {
         article: {
           id: item.id,

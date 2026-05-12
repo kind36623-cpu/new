@@ -1,65 +1,57 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import Groq from 'groq-sdk';
 
-const API_KEY      = import.meta.env.VITE_GEMINI_API_KEY || '';
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY  || '';
+// Gemini is used only for lightweight tasks (geocoding, map intel)
+// The VITE_GEMINI_API_KEY is a client-side key restricted to this domain in GCP Console.
+const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
+// Backend URL — set VITE_BACKEND_URL in Vercel dashboard
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
+
+// ── generateDeepInsight (Gemini — used by map sidebar) ──────────────
 export const generateDeepInsight = async (article) => {
-  if (!API_KEY) {
-    console.warn("No Gemini API Key found. Returning mock AI analysis.");
-    return new Promise((resolve) => setTimeout(() => {
-      resolve({
-         background: "According to historical intelligence, this event stems from long-term unresolved tension in the region that has recently escalated due to immediate resource scarcity.",
-         cause: "The direct catalyst was a sudden policy shift affecting local infrastructure logistics, forcing immediate, unplanned action from major participants.",
-         impact: "Predictive models suggest a 15% disruption in regional supply chains, likely leading to short-term price volatility in global markets before stabilizing in Q3.",
-         timeline: [
-            "Initial activity detected and flagged by automated monitors.",
-            "Policy shift announced, causing immediate market reactions.",
-            "Major carriers begin rerouting assets to avoid the affected zone.",
-            "International observers initiate emergency dialogue to stabilize situation."
-         ]
-      });
-    }, 2500));
+  if (!GEMINI_KEY) {
+    return new Promise((resolve) => setTimeout(() => resolve({
+      background: "According to historical intelligence, this event stems from long-term unresolved tension in the region.",
+      cause: "The direct catalyst was a sudden policy shift affecting local infrastructure logistics.",
+      impact: "Predictive models suggest a 15% disruption in regional supply chains.",
+      timeline: [
+        "Initial activity detected and flagged by automated monitors.",
+        "Policy shift announced, causing immediate market reactions.",
+        "Major carriers begin rerouting assets to avoid the affected zone.",
+        "International observers initiate emergency dialogue.",
+      ],
+    }), 2500));
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(API_KEY);
+    const genAI = new GoogleGenerativeAI(GEMINI_KEY);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
     const prompt = `
-      You are an expert geopolitical and economic intelligence analyst for a platform called Kenshiki. 
-      Analyze the following news article and synthesize a highly professional, structured intelligence brief.
-      
+      You are an expert geopolitical analyst for Kenshiki.
+      Analyze the following news article and return STRICTLY valid JSON with keys:
+      "background", "cause", "impact", "timeline" (array of 3-4 strings).
+
       ARTICLE TITLE: ${article.title}
       ARTICLE DESCRIPTION: ${article.description || ''}
       ARTICLE CONTENT: ${article.content || ''}
-      
-      Respond STRICTLY in valid JSON format with the following exact keys:
-      "background": A concise, highly professional paragraph explaining the historical or broader context of this event.
-      "cause": A sentence or two explaining the direct trigger or catalyst for this to happen now.
-      "impact": A predictive analysis of global or regional ramifications, written in an authoritative analyst tone.
-      "timeline": An array of exactly 3 to 4 short string sentences outlining the sequence of events (past, present, or immediate future).
     `;
-
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
-    
     const jsonMatch = responseText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     const parseableText = jsonMatch ? jsonMatch[1] : responseText;
-    
     return JSON.parse(parseableText);
   } catch (error) {
-    console.error("AI Generation failed:", error);
+    if (import.meta.env.DEV) console.error("AI deep insight failed:", error);
     return {
-      background: "An error occurred while connecting to the intelligence core.",
-      cause: "The AI service encountered an API Error. Please verify the Gemini API key.",
+      background: "Unable to retrieve context at this time.",
+      cause: "The intelligence core encountered an API error.",
       impact: "Analysis generation halted. Awaiting system resolution.",
-      timeline: ["Connection attempted.", "API Key validation failed or Quota exceeded.", "Intelligence generation aborted."]
+      timeline: ["Connection attempted.", "API validation failed or quota exceeded.", "Intelligence generation aborted."],
     };
   }
 };
 
-// AI Geocoding: Convert a location text string into lat/lng coordinates
+// ── extractCoordinates (Gemini + Nominatim fallback) ─────────────────
 export const extractCoordinates = async (locationText) => {
   const locationFallbacks = {
     'global data': { lat: 0, lng: 0 },
@@ -73,110 +65,59 @@ export const extractCoordinates = async (locationText) => {
     'south america': { lat: -15.0, lng: -55.0 },
   };
 
-  if (!API_KEY) {
+  if (!GEMINI_KEY) {
     const normalized = locationText.toLowerCase().trim();
     for (const [key, coords] of Object.entries(locationFallbacks)) {
-      if (normalized.includes(key) || key.includes(normalized)) {
-        return coords;
-      }
+      if (normalized.includes(key) || key.includes(normalized)) return coords;
     }
     return { lat: 20, lng: 10 };
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(API_KEY);
+    const genAI = new GoogleGenerativeAI(GEMINI_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-    const prompt = `
-      You are a precision geolocation service. 
-      Your ONLY task is to return the geographic center latitude and longitude for the following location: "${locationText}".
-      Respond ONLY with raw, valid JSON. No explanation, no markdown, no codeblocks.
-      Example output: {"lat": 35.6762, "lng": 139.6503}
-    `;
-
+    const prompt = `Return ONLY raw JSON with "lat" and "lng" for: "${locationText}". Example: {"lat":35.67,"lng":139.65}`;
     const result = await model.generateContent(prompt);
-    const responseText = result.response.text().trim();
-    const clean = responseText.replace(/```json|```/g, '').trim();
+    const clean = result.response.text().trim().replace(/```json|```/g, '').trim();
     const coords = JSON.parse(clean);
-    if (typeof coords.lat === 'number' && typeof coords.lng === 'number') {
-      return coords;
-    }
+    if (typeof coords.lat === 'number' && typeof coords.lng === 'number') return coords;
     throw new Error('Invalid coords format');
   } catch (error) {
-    console.error('AI Geocoding failed:', error);
+    if (import.meta.env.DEV) console.error('AI Geocoding failed:', error);
     return { lat: 20, lng: 10 };
   }
 };
 
-// Generate a full deep-dive article from a news item — powered by Groq
+// ── generateArticleDeepDive (routed through backend — GROQ_API_KEY stays server-side) ──
 export const generateArticleDeepDive = async (article) => {
-
-  const prompt = `You are an elite geopolitical and economic intelligence analyst for Kenshiki, a professional intelligence platform.
-Your task is to write a comprehensive 'Deep Dive' intelligence brief based on the following news event.
-
-TITLE: ${article.title}
-DESCRIPTION: ${article.description || ''}
-SOURCE: ${article.source || 'Global News'}
-
-Format the output STRICTLY in standard Markdown using this exact structure:
-
-# [Create an Engaging, Professional Title for the intelligence brief]
-
-**Source Intelligence:** ${article.source || 'Global News'} | **Region:** [infer region] | **Classification:** OPEN SOURCE
-
----
-
-## 🌐 Overview & Context
-[Write 1-2 rich paragraphs explaining the historical or geographic background leading to this event. Be authoritative and precise.]
-
-## 🔍 Direct Causes & Triggers
-[Bullet points (3-5) outlining the specific reasons this is happening now. Each bullet should begin with a bold label like **Economic Pressure:** or **Policy Shift:**]
-
-## 📊 Statistical & Data Analysis
-[Create a clean markdown table with at minimum 5 rows synthesizing projected data, financial impact, index scores, or regional metrics relevant to this news. Make well-reasoned analytical estimates where exact numbers aren't available. Headers should be: Metric | Current Status | Projected (90-day)]
-
-## ⚡ Predictive Impact
-[Write 1 authoritative paragraph on the medium-to-long-term global or regional consequences of this event.]
-
----
-*Brief generated by Kenshiki Intelligence Engine — Groq × LLaMA 3.3*`;
-
-  // ── Groq path (primary) ────────────────────────────────
-  if (GROQ_API_KEY) {
+  // Try backend first
+  if (BACKEND_URL) {
     try {
-      const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
-      const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are an elite intelligence analyst. Always respond in clean Markdown. Never wrap your response in code fences.' },
-          { role: 'user',   content: prompt },
-        ],
-        temperature: 0.65,
-        max_tokens: 2048,
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 30000);
+
+      const res = await fetch(`${BACKEND_URL}/api/ai/brief`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: article.title,
+          description: article.description || '',
+          source: article.source || 'Global News',
+        }),
+        signal: controller.signal,
       });
-      return completion.choices[0]?.message?.content?.trim() || '# Error\n\nEmpty response from Groq.';
+      clearTimeout(timeout);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.content) return data.content;
+      }
     } catch (err) {
-      console.error('Groq article generation failed:', err);
-      return `# Generation Error\n\nGroq could not synthesize a brief at this time.\n\n**Error:** ${err.message}`;
+      if (import.meta.env.DEV) console.warn('Backend AI brief failed, using mock:', err.message);
     }
   }
 
-  // ── Fallback: Gemini (if no Groq key) ─────────────────
-  if (API_KEY) {
-    try {
-      const genAI = new GoogleGenerativeAI(API_KEY);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-      const result = await model.generateContent(prompt);
-      let text = result.response.text();
-      text = text.replace(/^```(?:markdown)?\n?/m, '').replace(/\n?```$/m, '').trim();
-      return text;
-    } catch (err) {
-      console.error('Gemini fallback failed:', err);
-      return `# Generation Error\n\n**Error:** ${err.message}`;
-    }
-  }
-
-  // ── No key: mock response ──────────────────────────────
+  // Fallback mock when backend is unreachable
   return new Promise((resolve) => setTimeout(() => {
     resolve(`# Deep Intelligence Brief: ${article.title}
 
@@ -186,7 +127,7 @@ Format the output STRICTLY in standard Markdown using this exact structure:
 
 ## 🌐 Overview & Context
 
-This is a simulated intelligence brief (no API key configured). Add your Groq key to VITE_GROQ_API_KEY in .env to enable live AI generation.
+This intelligence brief was generated in offline mode. Configure \`VITE_BACKEND_URL\` in your Vercel environment variables pointing to your Render backend to enable live AI generation.
 
 ## 🔍 Direct Causes & Triggers
 
@@ -209,6 +150,6 @@ This is a simulated intelligence brief (no API key configured). Add your Groq ke
 This event is expected to generate significant ripple effects across adjacent sectors in the short-to-medium term.
 
 ---
-*Brief generated by Kenshiki Intelligence Engine · Demo Mode*`);
-  }, 1800));
+*Brief generated by Kenshiki Intelligence Engine · Offline Mode*`);
+  }, 800));
 };
