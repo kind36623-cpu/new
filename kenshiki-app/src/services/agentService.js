@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : 'http://localhost:5000/api';
+// In production (Vercel): VITE_BACKEND_URL = your Render URL e.g. https://your-app.onrender.com
+// In local dev: falls back to '/api' which is proxied by Vite to localhost:5000
+const API_BASE_URL = import.meta.env.VITE_BACKEND_URL
+  ? `${import.meta.env.VITE_BACKEND_URL}/api`
+  : (import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : '/api');
 
 export const chatWithAgent = async (article, message, history = []) => {
     try {
