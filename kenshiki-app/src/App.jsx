@@ -7,6 +7,9 @@ import { AgentProvider } from './contexts/AgentContext';
 
 // ── Lazy-load heavy pages to reduce initial bundle ─────────────────
 const LandingPage  = lazy(() => import('./pages/LandingPage'));
+const AboutPage    = lazy(() => import('./pages/TrustPages').then(m => ({ default: m.AboutPage })));
+const PrivacyPage  = lazy(() => import('./pages/TrustPages').then(m => ({ default: m.PrivacyPage })));
+const TermsPage    = lazy(() => import('./pages/TrustPages').then(m => ({ default: m.TermsPage })));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
 const MapViewer    = lazy(() => import('./pages/MapViewer'));
 const ArticleView  = lazy(() => import('./pages/ArticleView'));
@@ -52,8 +55,10 @@ function App() {
         <AgentProvider>
           <Suspense fallback={<PageLoader />}>
             <Routes>
-              {/* ── Public routes ──────────────────────── */}
               <Route path="/" element={<LandingPage />} />
+              <Route path="/about"   element={<AboutPage />} />
+              <Route path="/privacy" element={<PrivacyPage />} />
+              <Route path="/terms"   element={<TermsPage />} />
               <Route path="/login" element={
                 <PublicOnlyRoute><Login /></PublicOnlyRoute>
               } />

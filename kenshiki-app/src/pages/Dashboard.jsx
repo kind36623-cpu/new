@@ -22,7 +22,8 @@ export default function Dashboard() {
   const location = useLocation();
   const { registerArticles } = useAgent();
 
-  const rawSlug      = location.pathname === '/' ? 'world' : location.pathname.substring(1);
+  // Strip /app/ prefix to get the category slug
+  const rawSlug      = location.pathname.replace(/^\/app\/?/, '') || 'world';
   const categoryPath = VALID_CATEGORIES.has(rawSlug) ? rawSlug : 'world';
   const meta         = CAT_META[categoryPath];
 
@@ -172,7 +173,7 @@ export default function Dashboard() {
         }}>
           {Object.entries(CAT_META).map(([slug, m]) => {
             const isActive = slug === categoryPath;
-            const to = slug === 'world' ? '/insight' : `/${slug}`;
+            const to = slug === 'world' ? '/app/insight' : `/app/${slug}`;
             return (
               <Link
                 key={slug}
