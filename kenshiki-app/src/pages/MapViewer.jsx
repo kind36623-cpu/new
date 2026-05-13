@@ -1458,12 +1458,10 @@ export default function MapViewer() {
         initialViewState={{ longitude: 0, latitude: 20, zoom: 2, pitch: 0, bearing: 0 }} 
         mapStyle={isSatellite ? SATELLITE_STYLE : STREET_STYLE} 
         style={{ width: '100%', height: '100%', touchAction: 'none' }} 
-        terrain={{ source: 'terrain-dem', exaggeration: 1.5 }} 
         interactive={true}
         dragPan={true}
         touchZoomRotate={true}
       >
-        <Source id="terrain-dem" type="raster-dem" url="https://demotiles.maplibre.org/terrain-tiles/tiles.json" tileSize={256} />
         <MapControls mapRef={mapRef} isSatellite={isSatellite} onToggleStyle={() => setIsSatellite(!isSatellite)} />
 
 
