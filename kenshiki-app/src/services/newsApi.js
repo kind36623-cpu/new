@@ -20,9 +20,92 @@ async function fetchSerperImage(query) {
     if (!res.ok) return null;
     const data = await res.json();
     return data?.images?.[0]?.imageUrl || null;
-  } catch {
-    return null;
+}
+
+const CATEGORY_THEME_IMAGES = {
+  economic: [
+    "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1618042164219-62c820f10723?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1494412574643-ff11b0a5c1c3?q=80&w=800&auto=format&fit=crop"
+  ],
+  security: [
+    "https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1563986768609-322da13575f3?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1508873696983-2df519f0397e?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=800&auto=format&fit=crop"
+  ],
+  sports: [
+    "https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1508098682722-e99c43a406b2?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1546519638-68e109498ffc?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1595435934249-5df7ed86e196?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1517838277536-f5f99be501cd?q=80&w=800&auto=format&fit=crop"
+  ],
+  cultural: [
+    "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1517604931442-7e0c8ed2963c?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1549887534-1541e9326642?q=80&w=800&auto=format&fit=crop"
+  ],
+  local: [
+    "https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1449034446853-66c86144b0ad?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1519501025264-65ba15a82390?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1543269865-cbf427effbad?q=80&w=800&auto=format&fit=crop"
+  ],
+  insight: [
+    "https://images.unsplash.com/photo-1450133064473-71024230f91b?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1507842217343-583bb7270b66?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1455390582262-044cdead277a?q=80&w=800&auto=format&fit=crop"
+  ],
+  technology: [
+    "https://images.unsplash.com/photo-1677442136019-21780efad99a?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1558494949-ef010cbdcc31?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1542831371-29b0f74f9713?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1601987177651-8edfe6c20009?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1531297484001-80022131f5a1?q=80&w=800&auto=format&fit=crop"
+  ],
+  health: [
+    "https://images.unsplash.com/photo-1532187643603-ba119ca4109e?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1507668077129-56e32842fceb?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=800&auto=format&fit=crop"
+  ],
+  science: [
+    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1506318137071-a8e063b4bec0?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1576086213369-97a306d36557?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1581093458791-9f3c3900df4b?q=80&w=800&auto=format&fit=crop"
+  ],
+  world: [
+    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1495020689067-958852a6565d?q=80&w=800&auto=format&fit=crop"
+  ],
+  general: [
+    "https://images.unsplash.com/photo-1495020689067-958852a6565d?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=800&auto=format&fit=crop",
+    "https://images.unsplash.com/photo-1451187580459-43490279c0fa?q=80&w=800&auto=format&fit=crop"
+  ]
+};
+
+export function getThemedPlaceholder(category, title) {
+  const cat = String(category).toLowerCase();
+  const list = CATEGORY_THEME_IMAGES[cat] || CATEGORY_THEME_IMAGES.general;
+  
+  // Deterministic hashing based on title characters
+  let hash = 0;
+  const str = String(title || '');
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
   }
+  const index = Math.abs(hash) % list.length;
+  return list[index];
 }
 
 // Fallback intelligence data in case of API failure
@@ -83,6 +166,9 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
       await Promise.all(articles.map(async (art) => {
         if (!art.thumbnail) {
           art.thumbnail = await fetchSerperImage(art.title);
+        }
+        if (!art.thumbnail) {
+          art.thumbnail = getThemedPlaceholder('world', art.title);
         }
       }));
 
@@ -156,6 +242,9 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
       if (!art.thumbnail) {
         art.thumbnail = await fetchSerperImage(art.title);
       }
+      if (!art.thumbnail) {
+        art.thumbnail = getThemedPlaceholder(rawCategory, art.title);
+      }
     }));
 
     return { articles: rssArticles, nextPage: null };
@@ -193,7 +282,7 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
         author: (article.creator && article.creator.length > 0) ? article.creator[0] : 'Analyst Desk',
         description: article.description || 'No summary available.',
         location: (article.country && article.country.length > 0) ? article.country[0] : 'Global',
-        thumbnail: article.image_url || null,
+        thumbnail: article.image_url || getThemedPlaceholder(rawCategory, article.title),
         color: 'blue',
         coords: null,
       }));
