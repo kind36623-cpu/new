@@ -208,14 +208,14 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
     }
   }
 
-  // ── Google News RSS via Backend Proxy ─────────────────────────────────────
+  // ── NewsData.io Direct Fetch (Prioritize for EXACT images) ────────────────
   try {
     let query = explicitQuery;
     if (!query) {
       const categoryQueries = {
         economic:  'Economy OR Finance OR Markets OR "Global Trade"',
         security:  'Security OR Military OR Cybersecurity OR Geopolitics',
-        sports:    'Sports OR Football OR Cricket OR Basketball OR Tennis',
+        sports:    'Sports AND (Football OR Cricket OR Basketball OR Tennis OR NFL OR MLB OR "Formula 1") -politics -business',
         cultural:  'Culture OR Arts OR Entertainment OR Cinema',
         local:     'Local News OR Community OR Regional',
         insight:   'Analysis OR Opinion OR Investigation',
@@ -226,112 +226,83 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
       query = categoryQueries[rawCategory] || (rawCategory + ' News');
     }
 
-    // For sports, be more specific to avoid other kinds of news
-    if (rawCategory === 'sports' && !explicitQuery) {
-      query = 'Sports (Football OR Cricket OR Basketball OR Tennis OR NFL OR MLB OR "Formula 1") -politics -business';
-    }
+    const newsDataUrl = `https://newsdata.io/api/1/news?apikey=${API_KEY}&q=${encodeURIComponent(query)}&language=en${page ? `&page=${page}` : ''}`;
+    const res = await fetch(newsDataUrl);
+    if (!res.ok) throw new Error(`NewsData returned ${res.status}`);
+    
+    const data = await res.json();
+    if (!data.results || data.results.length === 0) throw new Error('Empty NewsData results');
 
-    // RSS doesn't support pagination natively via cursor. 
-    // If a second page is requested, we skip RSS and go straight to NewsData.
-    if (page && rawCategory !== 'world') {
-       throw new Error('RSS does not support pagination, falling back to NewsData');
-    }
-
-    const res = await fetch(`${BACKEND_URL}/api/news/rss?q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error(`RSS proxy returned ${res.status}`);
-
-    const text = await res.text();
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(text, "text/xml");
-    const items = Array.from(xmlDoc.querySelectorAll("item")).slice(0, 15);
-
-    if (items.length === 0) throw new Error('Empty RSS feed');
-
-    const rssArticles = items.map((item, index) => {
-      const descHTML = item.querySelector("description")?.textContent || "";
-      const cleanDesc = descHTML.replace(/<[^>]+>/g, '').trim();
-      const imgMatch = descHTML.match(/img[^>]+src="([^">]+)"/);
-      let thumb = imgMatch ? imgMatch[1] : null;
-      
-      // Ignore Google News tracking pixels or relative URLs
-      if (thumb && (thumb.includes('news.google.com') || thumb.startsWith('//'))) {
-        thumb = null;
-      }
-
-      // First extract the raw link to pass to fetchResourceImage
-      const rawLink = item.querySelector("link")?.textContent;
-
-      return {
-        id: `news-${index}-${Date.now()}`,
-        title: item.querySelector("title")?.textContent || "Analysis Insight",
-        source: item.querySelector("source")?.textContent || "Google News",
-        publishedAt: item.querySelector("pubDate")?.textContent || new Date().toISOString(),
-        category: rawCategory.charAt(0).toUpperCase() + rawCategory.slice(1),
-        author: "Analyst Desk",
-        description: cleanDesc.length > 200 ? cleanDesc.slice(0, 200) + '...' : cleanDesc || "New global development report.",
-        location: explicitQuery ? explicitQuery.replace(/["']/g, '').replace(/ local news/i, '').trim() : "Global",
-        thumbnail: thumb,
-        url: rawLink, // Keep the URL so we can fetch the og:image
-        color: "blue",
-        coords: null
-      };
-    });
-
-    await Promise.all(rssArticles.map(async (art) => {
-      if (!art.thumbnail && art.url) {
-        art.thumbnail = await fetchResourceImage(art.url);
-      }
-      if (!art.thumbnail) {
-        art.thumbnail = await fetchSerperImage(art.title);
-      }
-      if (!art.thumbnail) {
-        art.thumbnail = getThemedPlaceholder(rawCategory, art.title);
-      }
+    const articles = data.results.map((article, index) => ({
+      id: article.article_id || `news-${index}-${Date.now()}`,
+      title: article.title,
+      source: article.source_id || article.source_name || 'News Feed',
+      publishedAt: article.pubDate || new Date().toISOString(),
+      category: rawCategory.charAt(0).toUpperCase() + rawCategory.slice(1),
+      author: (article.creator && article.creator.length > 0) ? article.creator[0] : 'Analyst Desk',
+      description: article.description || 'No summary available.',
+      location: (article.country && article.country.length > 0) ? article.country[0] : 'Global',
+      thumbnail: article.image_url || getThemedPlaceholder(rawCategory, article.title),
+      url: article.link,
+      color: 'blue',
+      coords: null
     }));
 
-    return { articles: rssArticles, nextPage: null };
+    return { articles, nextPage: data.nextPage || null };
 
   } catch (error) {
-    console.error("RSS/Proxy failed or pagination requested, using NewsData.io:", error.message);
+    console.error("NewsData direct fetch failed, falling back to RSS:", error.message);
 
-    const newsDataCategoryMap = {
-      economic:   'business',
-      security:   'politics',
-      sports:     'sports',
-      cultural:   'entertainment',
-      local:      'top',
-      insight:    'top',
-      technology: 'technology',
-      health:     'health',
-      science:    'science',
-    };
-    const newsDataCategory = newsDataCategoryMap[rawCategory] || 'top';
-
+    // ── Fallback to Google News RSS Proxy ─────────────────────────────────────
     try {
-      const fallbackUrl = `${BACKEND_URL}/api/news/category?cat=${newsDataCategory}${page ? `&page=${page}` : ''}`;
-      const fallbackRes = await fetch(fallbackUrl);
-      if (!fallbackRes.ok) throw new Error('NewsData fallback also failed');
-      const fallbackData = await fallbackRes.json();
+      if (page) throw new Error('RSS does not support pagination');
       
-      if (!fallbackData.results || fallbackData.results.length === 0) return { articles: mockNews, nextPage: null };
+      let query = explicitQuery || (rawCategory + ' News');
+      const res = await fetch(`${BACKEND_URL}/api/news/rss?q=${encodeURIComponent(query)}`);
+      if (!res.ok) throw new Error(`RSS proxy returned ${res.status}`);
 
-      const articles = fallbackData.results.map((article, index) => ({
-        id: article.article_id || `fallback-${index}-${Date.now()}`,
-        title: article.title,
-        source: article.source_id || 'News Feed',
-        publishedAt: article.pubDate || new Date().toISOString(),
-        category: rawCategory.charAt(0).toUpperCase() + rawCategory.slice(1),
-        author: (article.creator && article.creator.length > 0) ? article.creator[0] : 'Analyst Desk',
-        description: article.description || 'No summary available.',
-        location: (article.country && article.country.length > 0) ? article.country[0] : 'Global',
-        thumbnail: article.image_url || getThemedPlaceholder(rawCategory, article.title),
-        color: 'blue',
-        coords: null,
+      const text = await res.text();
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(text, "text/xml");
+      const items = Array.from(xmlDoc.querySelectorAll("item")).slice(0, 15);
+
+      if (items.length === 0) throw new Error('Empty RSS feed');
+
+      const rssArticles = items.map((item, index) => {
+        const descHTML = item.querySelector("description")?.textContent || "";
+        const cleanDesc = descHTML.replace(/<[^>]+>/g, '').trim();
+        const rawLink = item.querySelector("link")?.textContent;
+        return {
+          id: `news-${index}-${Date.now()}`,
+          title: item.querySelector("title")?.textContent || "Analysis Insight",
+          source: item.querySelector("source")?.textContent || "Google News",
+          publishedAt: item.querySelector("pubDate")?.textContent || new Date().toISOString(),
+          category: rawCategory.charAt(0).toUpperCase() + rawCategory.slice(1),
+          author: "Analyst Desk",
+          description: cleanDesc.length > 200 ? cleanDesc.slice(0, 200) + '...' : cleanDesc || "New global development report.",
+          location: "Global",
+          thumbnail: null,
+          url: rawLink,
+          color: "blue",
+          coords: null
+        };
+      });
+
+      // Try fetching exact images via proxy, otherwise use placeholders
+      // We DO NOT use Serper anymore to prevent showing incorrect/unrelated images.
+      await Promise.all(rssArticles.map(async (art) => {
+        if (art.url) {
+          art.thumbnail = await fetchResourceImage(art.url);
+        }
+        if (!art.thumbnail) {
+          art.thumbnail = getThemedPlaceholder(rawCategory, art.title);
+        }
       }));
-      
-      return { articles, nextPage: fallbackData.nextPage || null };
-    } catch (fallbackError) {
-      console.error("All news sources failed:", fallbackError.message);
+
+      return { articles: rssArticles, nextPage: null };
+
+    } catch (rssError) {
+      console.error("RSS Fallback also failed:", rssError.message);
       return { articles: mockNews, nextPage: null };
     }
   }
