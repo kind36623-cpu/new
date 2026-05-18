@@ -14,6 +14,7 @@ const LOCAL_COMMANDS = [
   { patterns: ['cultural','culture','art','entertainment'],            tool: 'navigate_to_page', args: { page: 'cultural' } },
   { patterns: ['world','global','world news','home','feed'],           tool: 'navigate_to_page', args: { page: 'feed' } },
   { patterns: ['map','radar','location','show map'],                   tool: 'navigate_to_page', args: { page: 'map' } },
+  { patterns: ['brief','article','analysis','deep dive','summary'],    tool: 'navigate_to_page', args: { page: 'article' } },
   { patterns: ['read news','read headlines','what\'s the news','headlines','read me'], tool: 'read_news_feed', args: { count: 3 } },
   { patterns: ['where am i','current page','what page'],              tool: 'get_current_page_info', args: {} },
   { patterns: ['stop','quit','exit','goodbye','bye'],                  tool: 'stop', args: {} },
@@ -51,6 +52,7 @@ export function AgentProvider({ children }) {
   const [voiceGender, setVoiceGender]       = useState(() => localStorage.getItem('kira_voice_gender') || 'female');
 
   const articleTitlesRef    = useRef([]);
+  const fullArticlesRef     = useRef([]);
   const readArticlesRef     = useRef(new Set());
   const mapSearchHandlerRef = useRef(null);
   const chatHistoryRef      = useRef([]);
@@ -127,9 +129,32 @@ export function AgentProvider({ children }) {
       case 'navigate_to_page': {
         const route = PAGE_ROUTES[args.page];
         if (route) {
-          navigateRef.current(route);
-          const reply = `Going to ${args.page}!`;
-          speak(reply); updateReplyAndHistory(reply);
+          if (args.page === 'article') {
+            let articleToOpen = fullArticlesRef.current[0];
+            if (!articleToOpen) {
+              // Try loading from saved articles
+              try {
+                const saved = JSON.parse(localStorage.getItem('kenshiki_saved_articles') || '[]');
+                if (saved.length > 0) {
+                  articleToOpen = saved[0];
+                }
+              } catch (e) {
+                console.warn(e);
+              }
+            }
+            if (articleToOpen) {
+              navigateRef.current(route, { state: { article: articleToOpen } });
+              const reply = `Opening the intelligence brief for: ${articleToOpen.title}`;
+              speak(reply); updateReplyAndHistory(reply);
+            } else {
+              speak("I couldn't find any articles loaded or saved to open a brief for. Let's go to the news feed first.");
+              navigateRef.current('/app');
+            }
+          } else {
+            navigateRef.current(route);
+            const reply = `Going to ${args.page}!`;
+            speak(reply); updateReplyAndHistory(reply);
+          }
         }
         break;
       }
@@ -318,8 +343,9 @@ export function AgentProvider({ children }) {
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }, []);
 
-  const registerArticles  = useCallback((titles) => {
-    articleTitlesRef.current = titles || [];
+  const registerArticles  = useCallback((articles) => {
+    fullArticlesRef.current = articles || [];
+    articleTitlesRef.current = (articles || []).map(a => typeof a === 'string' ? a : a.title);
     readArticlesRef.current  = new Set();
   }, []);
   const registerMapSearch = useCallback((handler) => {

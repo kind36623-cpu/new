@@ -33,9 +33,9 @@ export default function Dashboard() {
 
   useEffect(() => { loadNews(categoryPath); }, [categoryPath]);
 
-  // Register article titles into AgentContext for KIRA to read
+  // Register articles into AgentContext for KIRA
   useEffect(() => {
-    registerArticles(articles.map(a => a.title));
+    registerArticles(articles);
   }, [articles, registerArticles]);
 
   const loadNews = async (cat) => {
