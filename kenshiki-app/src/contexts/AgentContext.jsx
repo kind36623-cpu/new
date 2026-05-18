@@ -1,12 +1,9 @@
 import React, { createContext, useContext, useRef, useState, useCallback, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { processVoiceCommand } from '../services/voiceAgentService';
+import { processVoiceCommand, cancelPendingVoiceRequest } from '../services/voiceAgentService';
 
 const AgentContext = createContext(null);
-
-export function useAgent() {
-  return useContext(AgentContext);
-}
+export function useAgent() { return useContext(AgentContext); }
 
 const PAGE_ROUTES = {
   feed:     '/app/insight',
@@ -31,93 +28,80 @@ const PAGE_LABELS = {
   '/app/local':   'the Local News Feed',
 };
 
-// Global array to prevent garbage collection of active SpeechSynthesisUtterances in Chrome/Edge.
+// Prevent GC of active utterances in Chromium
 const activeUtterances = [];
 
 export function AgentProvider({ children }) {
-  const [isListening, setIsListening]     = useState(false);
-  const [isContinuous, setIsContinuous]   = useState(false);
-  const [agentStatus, setAgentStatus]     = useState('idle');
+  const [isListening, setIsListening]       = useState(false);
+  const [isContinuous, setIsContinuous]     = useState(false);
+  const [agentStatus, setAgentStatus]       = useState('idle');
   const [lastTranscript, setLastTranscript] = useState('');
   const [lastReply, setLastReply]           = useState('');
+  const [interimText, setInterimText]       = useState('');
   const [voiceGender, setVoiceGender]       = useState(() => localStorage.getItem('kira_voice_gender') || 'female');
 
-  // App state registry — pages register their data here
-  const articleTitlesRef = useRef([]);
-  const readArticlesRef  = useRef(new Set());
+  const articleTitlesRef    = useRef([]);
+  const readArticlesRef     = useRef(new Set());
   const mapSearchHandlerRef = useRef(null);
-  
-  // Conversation History for natural context
-  const chatHistoryRef = useRef([]);
+  const chatHistoryRef      = useRef([]);
+  const recognitionRef      = useRef(null);
+  const isSpeakingRef       = useRef(false);
+  const isContinuousRef     = useRef(false); // sync ref for recognition callbacks
 
-  const recognitionRef = useRef(null);
-  const navigate       = useNavigate();
-  const location       = useLocation();
+  const navigate  = useNavigate();
+  const location  = useLocation();
 
-  // ── Helper to update last reply and chat history ────────────
   const updateReplyAndHistory = useCallback((replyText) => {
     setLastReply(replyText);
     chatHistoryRef.current.push({ role: 'assistant', content: replyText });
-    if (chatHistoryRef.current.length > 30) chatHistoryRef.current = chatHistoryRef.current.slice(-30);
+    if (chatHistoryRef.current.length > 20) chatHistoryRef.current = chatHistoryRef.current.slice(-20);
   }, []);
 
-  // ── TTS helper ──────────────────────────────────────────────────────────────
-  // onEndCallback: optional fn to call after speech finishes
+  // ── Fast TTS: speak immediately, restart mic when done ─────────────────────
   const speak = useCallback((text, onEndCallback) => {
     window.speechSynthesis.cancel();
-    
+    isSpeakingRef.current = true;
+
     const utter = new SpeechSynthesisUtterance(text);
-    utter.rate   = 1.0;
+    utter.rate   = 1.15; // Slightly faster = feels more alive
+    utter.pitch  = 1.0;
     utter.volume = 1.0;
 
-    // Prevent GC
     activeUtterances.push(utter);
-    if (activeUtterances.length > 10) activeUtterances.shift();
+    if (activeUtterances.length > 5) activeUtterances.shift();
 
+    // Pick best voice
     const voices = window.speechSynthesis.getVoices();
     const gender = localStorage.getItem('kira_voice_gender') || 'female';
-
     let preferred;
     if (gender === 'female') {
-      utter.pitch = 1.0;
-      utter.rate  = 1.05;
-      preferred = voices.find(v => v.name.includes('Aria') && v.name.includes('Natural')) ||
-                  voices.find(v => v.name.includes('Jenny') && v.name.includes('Natural')) ||
-                  voices.find(v => v.name.includes('Google US English')) ||
-                  voices.find(v => v.name.includes('Samantha')) ||
-                  voices.find(v => v.name.includes('Zira')) ||
-                  voices.find(v => (v.name.toLowerCase().includes('female') && v.lang.startsWith('en'))) ||
-                  voices.find(v => (v.lang === 'en-US' && !v.localService));
+      preferred = voices.find(v => v.name.includes('Aria') && v.name.includes('Natural'))
+               || voices.find(v => v.name.includes('Jenny') && v.name.includes('Natural'))
+               || voices.find(v => v.name.includes('Google US English'))
+               || voices.find(v => v.name.includes('Samantha'))
+               || voices.find(v => v.name.includes('Zira'))
+               || voices.find(v => v.lang === 'en-US');
     } else {
-      utter.pitch = 1.0;
-      utter.rate  = 1.05;
-      preferred = voices.find(v => v.name.includes('Guy') && v.name.includes('Natural')) ||
-                  voices.find(v => v.name.includes('Ryan') && v.name.includes('Natural')) ||
-                  voices.find(v => v.name.includes('Christopher') && v.name.includes('Natural')) ||
-                  voices.find(v => v.name.includes('Google UK English Male')) ||
-                  voices.find(v => v.name.includes('Mark')) ||
-                  voices.find(v => v.name.includes('David')) ||
-                  voices.find(v => (v.name.toLowerCase().includes('male') && v.lang.startsWith('en')));
+      preferred = voices.find(v => v.name.includes('Guy') && v.name.includes('Natural'))
+               || voices.find(v => v.name.includes('Ryan') && v.name.includes('Natural'))
+               || voices.find(v => v.name.includes('Google UK English Male'))
+               || voices.find(v => v.name.includes('David'))
+               || voices.find(v => v.lang === 'en-US');
     }
     if (preferred) utter.voice = preferred;
 
-    setAgentStatus('speaking');
-    utter.onstart = () => setAgentStatus('speaking');
-
-    const handleSpeechEnd = () => {
+    const done = () => {
+      isSpeakingRef.current = false;
       setAgentStatus('idle');
-      // Clean up reference
       const idx = activeUtterances.indexOf(utter);
       if (idx > -1) activeUtterances.splice(idx, 1);
       if (onEndCallback) onEndCallback();
     };
 
-    utter.onend = handleSpeechEnd;
-    utter.onerror = (e) => {
-      console.warn('[Agent] SpeechSynthesis error or blocked:', e);
-      handleSpeechEnd();
-    };
+    utter.onend   = done;
+    utter.onerror = (e) => { console.warn('[KIRA] TTS error:', e.error); done(); };
 
+    setAgentStatus('speaking');
     window.speechSynthesis.speak(utter);
   }, []);
 
@@ -128,159 +112,165 @@ export function AgentProvider({ children }) {
         const route = PAGE_ROUTES[args.page];
         if (route) {
           navigate(route);
-          const phrases = [
-            `Sure! Taking you to the ${args.page} page now.`,
-            `On it! Heading over to ${args.page}.`,
-            `Got it, switching to the ${args.page} section!`,
-          ];
-          const reply = phrases[Math.floor(Math.random() * phrases.length)];
+          const reply = `Taking you to ${args.page}!`;
           speak(reply);
           updateReplyAndHistory(reply);
-        } else {
-          speak("Hmm, I don't recognize that page. Could you try a different one?");
         }
         break;
       }
-
       case 'read_news_feed': {
         const count = args.count || 3;
-        const unreadTitles = articleTitlesRef.current.filter(t => !readArticlesRef.current.has(t));
-
-        if (unreadTitles.length === 0) {
-          if (articleTitlesRef.current.length === 0) {
-            speak("Looks like there's nothing loaded on this feed yet. Want me to take you somewhere else?");
-            updateReplyAndHistory("Feed is empty.");
-          } else {
-            speak("You're all caught up on this feed! Nice. Want to explore another section?");
-            updateReplyAndHistory("All headlines have been read.");
-          }
+        const unread = articleTitlesRef.current.filter(t => !readArticlesRef.current.has(t));
+        if (unread.length === 0) {
+          const reply = "You're all caught up! Want to explore another section?";
+          speak(reply); updateReplyAndHistory(reply);
           return;
         }
-
-        const titlesToRead = unreadTitles.slice(0, count);
-        titlesToRead.forEach(t => readArticlesRef.current.add(t));
-
-        const intro = `Here are ${titlesToRead.length} headlines for you. `;
-        const body  = titlesToRead.map((t, i) => `Number ${i + 1}: ${t}.`).join(' ');
-        speak(intro + body);
-        updateReplyAndHistory(`Reading ${titlesToRead.length} headlines.`);
+        const toRead = unread.slice(0, count);
+        toRead.forEach(t => readArticlesRef.current.add(t));
+        const reply = toRead.map((t, i) => `${i + 1}: ${t}.`).join(' ');
+        speak(reply); updateReplyAndHistory(`Reading ${toRead.length} headlines.`);
         break;
       }
-
       case 'search_map': {
         if (mapSearchHandlerRef.current) {
           mapSearchHandlerRef.current(args.query);
-          speak(`Searching the map for ${args.query} right now!`);
-          updateReplyAndHistory(`Map search: ${args.query}`);
         } else {
           navigate('/app/map');
-          speak(`Opening the map and searching for ${args.query}. One sec!`);
-          updateReplyAndHistory(`Opening map for: ${args.query}`);
           sessionStorage.setItem('agent_pending_map_search', args.query);
         }
+        const reply = `Searching the map for ${args.query}!`;
+        speak(reply); updateReplyAndHistory(reply);
         break;
       }
-
       case 'get_current_page_info': {
         const label = PAGE_LABELS[location.pathname] || 'this page';
         const count = articleTitlesRef.current.length;
-        let info = `You're currently on ${label}.`;
-        if (count > 0) info += ` I can see ${count} articles loaded up on screen.`;
-        speak(info);
-        updateReplyAndHistory(info);
+        const info  = `You're on ${label}.${count > 0 ? ` I see ${count} articles.` : ''}`;
+        speak(info); updateReplyAndHistory(info);
         break;
       }
-
       default:
-        speak("Hmm, I'm not sure how to do that one. Try asking me differently?");
+        speak("Try asking me differently?");
     }
   }, [navigate, location, speak, updateReplyAndHistory]);
 
-  // ── Process transcript through Groq ────────────────────────────────────────
+  // ── Process voice command ───────────────────────────────────────────────────
   const processCommand = useCallback(async (transcript) => {
     if (!transcript.trim()) return;
-
     setAgentStatus('thinking');
     setLastTranscript(transcript);
-
-    // Save user's speech to history
+    setInterimText('');
     chatHistoryRef.current.push({ role: 'user', content: transcript });
 
     const result = await processVoiceCommand(
-      transcript,
-      location.pathname,
-      articleTitlesRef.current,
-      chatHistoryRef.current
+      transcript, location.pathname,
+      articleTitlesRef.current, chatHistoryRef.current,
     );
+
+    if (!result) return; // Cancelled
 
     if (result.type === 'tool_call') {
       dispatchToolCall(result.name, result.args);
     } else {
-      setAgentStatus('speaking');
       speak(result.content);
       updateReplyAndHistory(result.content);
     }
   }, [location.pathname, dispatchToolCall, speak, updateReplyAndHistory]);
 
-  // ── SpeechRecognition setup ─────────────────────────────────────────────────
-  const startListening = useCallback(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech Recognition is not supported in this browser. Please use Chrome or Edge.');
-      return;
+  // ── Continuous SpeechRecognition: always listening, instant restart ─────────
+  const startRecognitionSession = useCallback(() => {
+    if (!isContinuousRef.current) return;
+    if (isSpeakingRef.current) return; // Don't listen while speaking
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch {}
     }
 
-    // Prevent double-starting
-    if (agentStatus !== 'idle') return;
-    setAgentStatus('starting');
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
 
-    window.speechSynthesis.cancel();
-    const recognition = new SpeechRecognition();
-    recognition.lang           = 'en-US';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
-    recognition.continuous     = false;
+    const rec = new SpeechRecognition();
+    rec.lang             = 'en-US';
+    rec.continuous       = false; // One utterance at a time (more reliable cross-browser)
+    rec.interimResults   = true;  // Show live text while speaking
+    rec.maxAlternatives  = 1;
 
-    recognition.onstart = () => {
+    rec.onstart = () => {
       setIsListening(true);
       setAgentStatus('listening');
-      setLastReply('');
     };
 
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript;
-      processCommand(transcript);
-    };
-
-    recognition.onerror = (event) => {
-      console.error('[Agent] SpeechRecognition error:', event.error);
-      setIsListening(false);
-      setAgentStatus('idle');
-      
-      // Prevent tight CPU-burning restart loop if permission is blocked or mic is unavailable
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
-        setIsContinuous(false);
-        speak("Microphone access is blocked or unavailable. Please enable permissions in your browser address bar.");
-      } else if (event.error === 'no-speech' && !isContinuous) {
-        speak("I didn't quite catch that — could you say it again?");
+    rec.onresult = (event) => {
+      let interim = '';
+      let final   = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) final += t;
+        else interim += t;
+      }
+      if (interim) setInterimText(interim);
+      if (final) {
+        setInterimText('');
+        // Cancel any in-flight request for previous utterance
+        cancelPendingVoiceRequest();
+        processCommand(final.trim());
       }
     };
 
-    recognition.onend = () => {
+    rec.onerror = (event) => {
       setIsListening(false);
-      setAgentStatus((prev) => (prev === 'listening' || prev === 'starting') ? 'idle' : prev);
+      if (event.error === 'not-allowed' || event.error === 'audio-capture' || event.error === 'service-not-allowed') {
+        isContinuousRef.current = false;
+        setIsContinuous(false);
+        setAgentStatus('idle');
+        speak("Microphone blocked. Please allow mic access in your browser.");
+        return;
+      }
+      // For no-speech or network errors, just restart silently
+      setAgentStatus('idle');
     };
 
-    recognitionRef.current = recognition;
-    recognition.start();
-  }, [processCommand, speak, agentStatus, isContinuous]);
+    rec.onend = () => {
+      setIsListening(false);
+      // Only restart if we're still in continuous mode and not speaking/processing
+      if (isContinuousRef.current && !isSpeakingRef.current) {
+        setTimeout(() => {
+          if (isContinuousRef.current) startRecognitionSession();
+        }, 100); // Tiny delay to avoid tight loops
+      } else {
+        setAgentStatus('idle');
+      }
+    };
+
+    recognitionRef.current = rec;
+    try { rec.start(); } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [processCommand, speak]);
+
+  // Restart mic after KIRA finishes speaking
+  useEffect(() => {
+    if (agentStatus === 'idle' && isContinuous && !isSpeakingRef.current) {
+      setTimeout(() => {
+        if (isContinuousRef.current && !isSpeakingRef.current) startRecognitionSession();
+      }, 150);
+    }
+  }, [agentStatus, isContinuous, startRecognitionSession]);
+
+  const startListening = useCallback(() => {
+    isContinuousRef.current = true;
+    startRecognitionSession();
+  }, [startRecognitionSession]);
 
   const stopListening = useCallback(() => {
-    recognitionRef.current?.stop();
-    window.speechSynthesis.cancel();
-    setIsListening(false);
+    isContinuousRef.current = false;
     setIsContinuous(false);
+    cancelPendingVoiceRequest();
+    window.speechSynthesis.cancel();
+    isSpeakingRef.current = false;
+    try { recognitionRef.current?.stop(); } catch {}
+    setIsListening(false);
     setAgentStatus('idle');
+    setInterimText('');
   }, []);
 
   const toggleAgent = useCallback(() => {
@@ -288,31 +278,28 @@ export function AgentProvider({ children }) {
       stopListening();
     } else {
       setIsContinuous(true);
+      isContinuousRef.current = true;
       const greetings = [
-        "Hey there! I'm Kira. What can I help you with?",
-        "Hi! Kira here — ask me anything, I'm all ears!",
-        "Hello! I'm Kira. What's on your mind?",
-        "Hey! Good to hear from you. What do you need?",
-        "Hi there! Kira at your service — go ahead!",
+        "Hey! I'm Kira. What can I help with?",
+        "Hi, Kira here — go ahead!",
+        "Hey! What's up?",
       ];
       const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-      // After greeting finishes speaking, start listening automatically
-      speak(greeting, () => startListening());
       updateReplyAndHistory(greeting);
+      // Speak greeting, then start mic
+      speak(greeting, () => startRecognitionSession());
     }
-  }, [isContinuous, agentStatus, stopListening, speak, startListening, updateReplyAndHistory]);
+  }, [isContinuous, agentStatus, stopListening, speak, startRecognitionSession, updateReplyAndHistory]);
 
-  // Auto-restart listening if continuous mode is active and we're idle
+  // Load voices on mount
   useEffect(() => {
-    if (isContinuous && agentStatus === 'idle') {
-      startListening();
-    }
-  }, [isContinuous, agentStatus, startListening]);
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+  }, []);
 
-  // ── Public registration APIs for pages ──────────────────────────────────────
-  const registerArticles = useCallback((titles) => {
+  const registerArticles  = useCallback((titles) => {
     articleTitlesRef.current = titles || [];
-    readArticlesRef.current = new Set(); // Reset read history when new articles are loaded
+    readArticlesRef.current  = new Set();
   }, []);
 
   const registerMapSearch = useCallback((handler) => {
@@ -320,29 +307,13 @@ export function AgentProvider({ children }) {
     return () => { mapSearchHandlerRef.current = null; };
   }, []);
 
-  // Load voices on mount (Chrome needs this trigger)
-  useEffect(() => {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
-  }, []);
-
-  const value = {
-    isListening,
-    agentStatus,
-    lastTranscript,
-    lastReply,
-    toggleAgent,
-    startListening,
-    stopListening,
-    registerArticles,
-    registerMapSearch,
-    speak,
-    voiceGender,
-    setVoiceGender,
-  };
-
   return (
-    <AgentContext.Provider value={value}>
+    <AgentContext.Provider value={{
+      isListening, agentStatus, lastTranscript, lastReply, interimText,
+      toggleAgent, startListening, stopListening,
+      registerArticles, registerMapSearch, speak,
+      voiceGender, setVoiceGender,
+    }}>
       {children}
     </AgentContext.Provider>
   );

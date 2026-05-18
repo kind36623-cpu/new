@@ -3,14 +3,15 @@ import { useAgent } from '../../contexts/AgentContext';
 import { X } from 'lucide-react';
 
 const STATUS_CONFIG = {
-  idle:      { label: 'Hold to speak',     color: '#8b5cf6', gradient: 'linear-gradient(135deg, #c084fc, #6366f1)' },
+  idle:      { label: 'Tap to activate',   color: '#8b5cf6', gradient: 'linear-gradient(135deg, #c084fc, #6366f1)' },
   listening: { label: 'Listening...',       color: '#06b6d4', gradient: 'linear-gradient(135deg, #00f5d4, #3b82f6)' },
   thinking:  { label: 'Thinking...',        color: '#f59e0b', gradient: 'linear-gradient(135deg, #fcd34d, #ec4899)' },
   speaking:  { label: 'Speaking...',        color: '#ec4899', gradient: 'linear-gradient(135deg, #f472b6, #8b5cf6)' },
+  starting:  { label: 'Starting...',        color: '#8b5cf6', gradient: 'linear-gradient(135deg, #c084fc, #6366f1)' },
 };
 
 export default function AgentHUD() {
-  const { agentStatus, toggleAgent, lastTranscript, lastReply } = useAgent();
+  const { agentStatus, toggleAgent, lastTranscript, lastReply, interimText } = useAgent();
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
@@ -81,14 +82,21 @@ export default function AgentHUD() {
             }}>KIRA</span>
           </div>
 
-          {/* Transcript */}
-          {lastTranscript && (
+          {/* Live interim transcript while user speaks */}
+          {interimText && (
+            <div style={{ fontSize: 13, color: '#38bdf8', fontStyle: 'italic', marginBottom: 6, lineHeight: 1.5, opacity: 0.85 }}>
+              {interimText}...
+            </div>
+          )}
+
+          {/* Final transcript */}
+          {!interimText && lastTranscript && (
             <div style={{ fontSize: 13, color: '#94a3b8', fontStyle: 'italic', marginBottom: 10, lineHeight: 1.5 }}>
               "{lastTranscript}"
             </div>
           )}
 
-          {/* Reply */}
+          {/* KIRA reply */}
           {lastReply && (
             <div style={{ fontSize: 14, color: '#f1f5f9', fontWeight: 400, lineHeight: 1.6 }}>
               {lastReply}
