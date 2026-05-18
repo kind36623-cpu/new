@@ -54,11 +54,13 @@ export default function Dashboard() {
             const query = `"${city}" local news`;
             setLocalQuery(query);
             const result = await fetchNewsFeed('local', query);
-            setArticles(result.articles || []);
+            const sorted = (result.articles || []).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+            setArticles(sorted);
             setNextPage(result.nextPage || null);
           } catch {
             const result = await fetchNewsFeed('local', 'Local news');
-            setArticles(result.articles || []);
+            const sorted = (result.articles || []).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+            setArticles(sorted);
             setNextPage(result.nextPage || null);
             setLocalQuery('Local news');
           }
@@ -71,11 +73,13 @@ export default function Dashboard() {
             const query = `"${city}" local news`;
             setLocalQuery(query);
             const result = await fetchNewsFeed('local', query);
-            setArticles(result.articles || []);
+            const sorted = (result.articles || []).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+            setArticles(sorted);
             setNextPage(result.nextPage || null);
           } catch {
             const result = await fetchNewsFeed('local', 'Local news');
-            setArticles(result.articles || []);
+            const sorted = (result.articles || []).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+            setArticles(sorted);
             setNextPage(result.nextPage || null);
             setLocalQuery('Local news');
           }
@@ -85,7 +89,8 @@ export default function Dashboard() {
       }
     }
     const result = await fetchNewsFeed(cat);
-    setArticles(result.articles || []);
+    const sorted = (result.articles || []).sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+    setArticles(sorted);
     setNextPage(result.nextPage || null);
     setLoading(false);
   };
@@ -104,9 +109,16 @@ export default function Dashboard() {
         setArticles(prev => {
           const existingIds = new Set(prev.map(a => a.id));
           const newArticles = result.articles.filter(a => !existingIds.has(a.id));
-          return [...prev, ...newArticles];
+          
+          const combined = [...prev, ...newArticles];
+          // Sort chronologically: newest (breaking) to oldest (days ago)
+          combined.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+          return combined;
         });
         setNextPage(result.nextPage || null);
+
+        // If we didn't get enough new articles to push the observer out of view, we should fetch again.
+        // We'll let the IntersectionObserver handle it if it triggers, but just in case, we can rely on user scrolling.
       }
     } catch (e) {
       console.error("Failed to load more news:", e);
@@ -125,7 +137,23 @@ export default function Dashboard() {
       { threshold: 0.1 }
     );
     if (observerTarget.current) observer.observe(observerTarget.current);
-    return () => observer.disconnect();
+
+    // Failsafe: if the observer target is already visible (e.g. after a fetch that didn't add enough height),
+    // trigger a loadMore again after a short delay to allow React to render.
+    let timeout;
+    if (nextPage && !loadingMore && observerTarget.current) {
+      timeout = setTimeout(() => {
+        const rect = observerTarget.current?.getBoundingClientRect();
+        if (rect && rect.top <= window.innerHeight) {
+          loadMore();
+        }
+      }, 500);
+    }
+
+    return () => {
+      observer.disconnect();
+      if (timeout) clearTimeout(timeout);
+    };
   }, [nextPage, loadingMore, loadMore]);
 
   const calcRead   = (item) => Math.max(2, Math.ceil((item?.description?.length || 200) / 100));
