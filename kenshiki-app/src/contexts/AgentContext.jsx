@@ -31,6 +31,9 @@ const PAGE_LABELS = {
   '/app/local':   'the Local News Feed',
 };
 
+// Global array to prevent garbage collection of active SpeechSynthesisUtterances in Chrome/Edge.
+const activeUtterances = [];
+
 export function AgentProvider({ children }) {
   const [isListening, setIsListening]     = useState(false);
   const [isContinuous, setIsContinuous]   = useState(false);
@@ -62,9 +65,14 @@ export function AgentProvider({ children }) {
   // onEndCallback: optional fn to call after speech finishes
   const speak = useCallback((text, onEndCallback) => {
     window.speechSynthesis.cancel();
+    
     const utter = new SpeechSynthesisUtterance(text);
     utter.rate   = 1.0;
     utter.volume = 1.0;
+
+    // Prevent GC
+    activeUtterances.push(utter);
+    if (activeUtterances.length > 10) activeUtterances.shift();
 
     const voices = window.speechSynthesis.getVoices();
     const gender = localStorage.getItem('kira_voice_gender') || 'female';
@@ -95,10 +103,21 @@ export function AgentProvider({ children }) {
 
     setAgentStatus('speaking');
     utter.onstart = () => setAgentStatus('speaking');
-    utter.onend   = () => {
+
+    const handleSpeechEnd = () => {
       setAgentStatus('idle');
+      // Clean up reference
+      const idx = activeUtterances.indexOf(utter);
+      if (idx > -1) activeUtterances.splice(idx, 1);
       if (onEndCallback) onEndCallback();
     };
+
+    utter.onend = handleSpeechEnd;
+    utter.onerror = (e) => {
+      console.warn('[Agent] SpeechSynthesis error or blocked:', e);
+      handleSpeechEnd();
+    };
+
     window.speechSynthesis.speak(utter);
   }, []);
 
@@ -237,7 +256,12 @@ export function AgentProvider({ children }) {
       console.error('[Agent] SpeechRecognition error:', event.error);
       setIsListening(false);
       setAgentStatus('idle');
-      if (event.error === 'no-speech' && !isContinuous) {
+      
+      // Prevent tight CPU-burning restart loop if permission is blocked or mic is unavailable
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'audio-capture') {
+        setIsContinuous(false);
+        speak("Microphone access is blocked or unavailable. Please enable permissions in your browser address bar.");
+      } else if (event.error === 'no-speech' && !isContinuous) {
         speak("I didn't quite catch that — could you say it again?");
       }
     };
