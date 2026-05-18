@@ -20,6 +20,10 @@ async function fetchSerperImage(query) {
     if (!res.ok) return null;
     const data = await res.json();
     return data?.images?.[0]?.imageUrl || null;
+  } catch (error) {
+    console.error("fetchSerperImage error:", error);
+    return null;
+  }
 }
 
 const CATEGORY_THEME_IMAGES = {
@@ -222,6 +226,12 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
       const descHTML = item.querySelector("description")?.textContent || "";
       const cleanDesc = descHTML.replace(/<[^>]+>/g, '').trim();
       const imgMatch = descHTML.match(/img[^>]+src="([^">]+)"/);
+      let thumb = imgMatch ? imgMatch[1] : null;
+      
+      // Ignore Google News tracking pixels or relative URLs
+      if (thumb && (thumb.includes('news.google.com') || thumb.startsWith('//'))) {
+        thumb = null;
+      }
 
       return {
         id: `news-${index}-${Date.now()}`,
@@ -232,7 +242,7 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
         author: "Analyst Desk",
         description: cleanDesc.length > 200 ? cleanDesc.slice(0, 200) + '...' : cleanDesc || "New global development report.",
         location: explicitQuery ? explicitQuery.replace(/["']/g, '').replace(/ local news/i, '').trim() : "Global",
-        thumbnail: imgMatch ? imgMatch[1] : null,
+        thumbnail: thumb,
         color: "blue",
         coords: null
       };
