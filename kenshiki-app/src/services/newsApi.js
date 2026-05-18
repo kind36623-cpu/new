@@ -6,6 +6,8 @@ const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
 // NewsData.io key still used as a fallback if backend proxy is unavailable
 const API_KEY = import.meta.env.VITE_NEWS_API_KEY || 'pub_07ec3f5b03bc47ab99562d3f8855b97f';
 
+import { extractPreciseLocation } from './aiService';
+
 async function fetchSerperImage(query) {
   try {
     const key = import.meta.env.VITE_SERPER_API_KEY;
@@ -53,21 +55,19 @@ const mockNews = [
   }
 ];
 
-export const fetchNewsFeed = async (category = 'world', explicitQuery = null) => {
+export const fetchNewsFeed = async (category = 'world', explicitQuery = null, page = null) => {
   const rawCategory = category === 'general' ? 'world' : category;
 
   // ── World / Top News ───────────────────────────────────────────────────────
-  // Route through backend proxy (keeps API key server-side, works on Vercel)
   if (rawCategory === 'world') {
     try {
-      // Try backend proxy first (works in prod + local)
-      const response = await fetch(`${BACKEND_URL}/api/news/top`);
+      const response = await fetch(`${BACKEND_URL}/api/news/top${page ? `?page=${page}` : ''}`);
       if (!response.ok) throw new Error(`Backend news proxy: ${response.status}`);
       const data = await response.json();
-      if (!data.results) return mockNews;
+      if (!data.results) return { articles: mockNews, nextPage: null };
 
       const articles = data.results.map((article, index) => ({
-        id: article.article_id || `live-${index}`,
+        id: article.article_id || `live-${index}-${Date.now()}`,
         title: article.title,
         source: article.source_id || 'Unknown Feed',
         publishedAt: article.pubDate || new Date().toISOString(),
@@ -86,44 +86,46 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
         }
       }));
 
-      return articles;
+      return { articles, nextPage: data.nextPage || null };
     } catch (e) {
       console.error('Top news fetch failed:', e);
-      return mockNews;
+      return { articles: mockNews, nextPage: null };
     }
   }
 
   // ── Google News RSS via Backend Proxy ─────────────────────────────────────
-  // The backend (Render) fetches Google RSS server-side — no CORS issues
   try {
     let query = explicitQuery;
     if (!query) {
-      // Full category → search query mapping
       const categoryQueries = {
-        economic:  'Economy OR Global Finance OR Markets OR Trade OR GDP',
-        security:  'Global Security OR Military OR Intelligence OR Cybersecurity OR Geopolitics',
-        sports:    'Sports OR Football OR Cricket OR Tennis OR Olympics OR NBA OR FIFA',
-        cultural:  'Culture OR Arts OR Entertainment OR Cinema OR Music OR Society',
-        local:     'Local News OR Community OR Regional OR City',
-        insight:   'Analysis OR Opinion OR In-depth OR Investigation OR Special Report',
-        technology:'Technology OR AI OR Artificial Intelligence OR Tech OR Innovation',
-        health:    'Health OR Medicine OR WHO OR Disease OR Wellness',
-        science:   'Science OR Space OR NASA OR Research OR Discovery',
+        economic:  'Economy OR Finance OR Markets OR "Global Trade"',
+        security:  'Security OR Military OR Cybersecurity OR Geopolitics',
+        sports:    'Sports OR Football OR Cricket OR Basketball OR Tennis',
+        cultural:  'Culture OR Arts OR Entertainment OR Cinema',
+        local:     'Local News OR Community OR Regional',
+        insight:   'Analysis OR Opinion OR Investigation',
+        technology:'Technology OR AI OR "Software Engineering" OR Gadgets',
+        health:    'Health OR Medical OR Medicine OR Wellness',
+        science:   'Science OR Space OR Research OR Physics',
       };
       query = categoryQueries[rawCategory] || (rawCategory + ' News');
     }
 
-    // Call our backend RSS proxy — works from both Vercel (prod) and localhost (dev)
-    const res = await fetch(`${BACKEND_URL}/api/news/rss?q=${encodeURIComponent(query)}`);
-
-    if (!res.ok) {
-      // RSS failed (Google blocked) → fallback to NewsData.io via backend
-      console.warn(`RSS proxy failed (${res.status}), falling back to NewsData.io`);
-      throw new Error(`RSS proxy returned ${res.status}`);
+    // For sports, be more specific to avoid other kinds of news
+    if (rawCategory === 'sports' && !explicitQuery) {
+      query = 'Sports (Football OR Cricket OR Basketball OR Tennis OR NFL OR MLB OR "Formula 1") -politics -business';
     }
 
-    const text = await res.text();
+    // RSS doesn't support pagination natively via cursor. 
+    // If a second page is requested, we skip RSS and go straight to NewsData.
+    if (page && rawCategory !== 'world') {
+       throw new Error('RSS does not support pagination, falling back to NewsData');
+    }
 
+    const res = await fetch(`${BACKEND_URL}/api/news/rss?q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error(`RSS proxy returned ${res.status}`);
+
+    const text = await res.text();
     const parser = new DOMParser();
     const xmlDoc = parser.parseFromString(text, "text/xml");
     const items = Array.from(xmlDoc.querySelectorAll("item")).slice(0, 15);
@@ -136,14 +138,14 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
       const imgMatch = descHTML.match(/img[^>]+src="([^">]+)"/);
 
       return {
-        id: `news-${index}`,
+        id: `news-${index}-${Date.now()}`,
         title: item.querySelector("title")?.textContent || "Analysis Insight",
         source: item.querySelector("source")?.textContent || "Google News",
         publishedAt: item.querySelector("pubDate")?.textContent || new Date().toISOString(),
         category: rawCategory.charAt(0).toUpperCase() + rawCategory.slice(1),
         author: "Analyst Desk",
         description: cleanDesc.length > 200 ? cleanDesc.slice(0, 200) + '...' : cleanDesc || "New global development report.",
-        location: explicitQuery ? explicitQuery : "Global",
+        location: explicitQuery ? explicitQuery.replace(/["']/g, '').replace(/ local news/i, '').trim() : "Global",
         thumbnail: imgMatch ? imgMatch[1] : null,
         color: "blue",
         coords: null
@@ -156,13 +158,11 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
       }
     }));
 
-    return rssArticles;
+    return { articles: rssArticles, nextPage: null };
 
   } catch (error) {
-    console.error("Google RSS failed, trying NewsData.io fallback:", error.message);
+    console.error("RSS/Proxy failed or pagination requested, using NewsData.io:", error.message);
 
-    // ── Fallback: NewsData.io backend proxy ─────────────────────────────────
-    // Maps categories to NewsData.io category slugs
     const newsDataCategoryMap = {
       economic:   'business',
       security:   'politics',
@@ -177,13 +177,15 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
     const newsDataCategory = newsDataCategoryMap[rawCategory] || 'top';
 
     try {
-      const fallbackRes = await fetch(`${BACKEND_URL}/api/news/category?cat=${newsDataCategory}`);
+      const fallbackUrl = `${BACKEND_URL}/api/news/category?cat=${newsDataCategory}${page ? `&page=${page}` : ''}`;
+      const fallbackRes = await fetch(fallbackUrl);
       if (!fallbackRes.ok) throw new Error('NewsData fallback also failed');
       const fallbackData = await fallbackRes.json();
-      if (!fallbackData.results || fallbackData.results.length === 0) return mockNews;
+      
+      if (!fallbackData.results || fallbackData.results.length === 0) return { articles: mockNews, nextPage: null };
 
-      return fallbackData.results.map((article, index) => ({
-        id: article.article_id || `fallback-${index}`,
+      const articles = fallbackData.results.map((article, index) => ({
+        id: article.article_id || `fallback-${index}-${Date.now()}`,
         title: article.title,
         source: article.source_id || 'News Feed',
         publishedAt: article.pubDate || new Date().toISOString(),
@@ -195,9 +197,11 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
         color: 'blue',
         coords: null,
       }));
+      
+      return { articles, nextPage: fallbackData.nextPage || null };
     } catch (fallbackError) {
       console.error("All news sources failed:", fallbackError.message);
-      return mockNews;
+      return { articles: mockNews, nextPage: null };
     }
   }
 };
@@ -208,7 +212,7 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null) =>
  * Performs deep analysis on news content to find precise locations and virtual status.
  * Uses Nominatim Geocoding (OSM) for real-world accuracy.
  */
-export const getArticleIntelligence = async (article) => {
+export const getArticleIntelligence = async (article, fallbackCoords = [20, 0]) => {
   const text = `${article.title} ${article.description || ''}`.toLowerCase();
   
   // 1. AI Analysis Case: Detect Virtual/Online Integration
@@ -216,8 +220,13 @@ export const getArticleIntelligence = async (article) => {
   const isVirtual = virtualKeywords.some(kw => text.includes(kw));
 
   // 2. Accurate Location Identification
-  // We use the article's existing location metadata or scan for names if needed.
-  let locationQuery = article.location === 'Global' ? '' : article.location;
+  let rawLoc = article.location || 'Global';
+  
+  // ALWAYS try to extract the precise city/town from the article text
+  rawLoc = await extractPreciseLocation(article.title, article.description || '', rawLoc, article.content || '');
+
+  let locationQuery = rawLoc === 'Global' ? '' : rawLoc;
+  const updatedArticle = { ...article, location: rawLoc };
   
   // 3. Geocode using OpenStreetMap Nominatim
   const geocode = async (query) => {
@@ -245,7 +254,7 @@ export const getArticleIntelligence = async (article) => {
     // If no specific place found for a virtual integration, we use a central fallback
     if (!coords) {
       return { 
-        ...article, 
+        ...updatedArticle, 
         isVirtual: true, 
         coords: [0, 0], // Central fallback so marker ALWAYS shows
         hasLocationIssue: true,
@@ -253,17 +262,17 @@ export const getArticleIntelligence = async (article) => {
       };
     }
     return { 
-      ...article, 
+      ...updatedArticle, 
       isVirtual: true, 
       coords: coords, 
-      intelligenceNote: `Participating from ${article.location}` 
+      intelligenceNote: `Participating from ${updatedArticle.location}` 
     };
   }
 
   // Standard news fallback - always ensure coords [lat, lon]
   return { 
-    ...article, 
+    ...updatedArticle, 
     isVirtual: false, 
-    coords: coords || [20, 0] // Default to a visible cental point if unknown
+    coords: coords || fallbackCoords
   };
 };

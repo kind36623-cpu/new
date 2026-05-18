@@ -88,33 +88,78 @@ export const extractCoordinates = async (locationText) => {
   }
 };
 
+export const extractPreciseLocation = async (title, description, fallback, content = '') => {
+  // Try backend first
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    
+    const res = await fetch(`${BACKEND_URL}/api/ai/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description, content, fallback }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    
+    if (res.ok) {
+      const data = await res.json();
+      if (data.location) return data.location;
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) console.warn('Backend location extract failed, falling back to Gemini:', e.message);
+  }
+
+  // Fallback to Gemini if backend is unavailable
+  if (!GEMINI_KEY) return fallback;
+  try {
+    const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const prompt = `You are a geographic entity extractor. 
+Extract the most specific city, state, or precise location where this news event occurred based on the text.
+Return ONLY the place name formatted as "City, State, Country" (or as close as possible).
+Do NOT include words like "in" or "near". Do NOT use markdown.
+If no specific place is mentioned, return exactly "${fallback}".
+
+Title: ${title}
+Description: ${description}
+Content: ${content}`;
+
+    const result = await model.generateContent(prompt);
+    const place = result.response.text().trim();
+    if (place && place.length > 0 && place.length < 50) return place;
+    return fallback;
+  } catch (error) {
+    if (import.meta.env.DEV) console.error('AI Precise Location failed:', error);
+    return fallback;
+  }
+};
+
 // ── generateArticleDeepDive (routed through backend — GROQ_API_KEY stays server-side) ──
 export const generateArticleDeepDive = async (article) => {
   // Try backend first
-  if (BACKEND_URL) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-      const res = await fetch(`${BACKEND_URL}/api/ai/brief`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: article.title,
-          description: article.description || '',
-          source: article.source || 'Global News',
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+    const res = await fetch(`${BACKEND_URL}/api/ai/brief`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: article.title,
+        description: article.description || '',
+        source: article.source || 'Global News',
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.content) return data.content;
-      }
-    } catch (err) {
-      if (import.meta.env.DEV) console.warn('Backend AI brief failed, using mock:', err.message);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.content) return data.content;
     }
+  } catch (err) {
+    if (import.meta.env.DEV) console.warn('Backend AI brief failed, using mock:', err.message);
   }
 
   // Fallback mock when backend is unreachable

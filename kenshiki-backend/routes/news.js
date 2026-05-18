@@ -70,9 +70,11 @@ router.get('/news/top', async (req, res) => {
         return res.status(503).json({ error: 'NewsData API key not configured on server' });
     }
 
+    const page = req.query.page || '';
+
     try {
         const response = await axios.get(
-            `https://newsdata.io/api/1/news?apikey=${API_KEY}&language=en&category=top`,
+            `https://newsdata.io/api/1/news?apikey=${API_KEY}&language=en&category=top${page ? `&page=${page}` : ''}`,
             { timeout: 10000 }
         );
 
@@ -97,9 +99,11 @@ router.get('/news/category', async (req, res) => {
         return res.status(503).json({ error: 'NewsData API key not configured on server' });
     }
 
+    const page = req.query.page || '';
+
     try {
         const response = await axios.get(
-            `https://newsdata.io/api/1/news?apikey=${API_KEY}&language=en&category=${cat}`,
+            `https://newsdata.io/api/1/news?apikey=${API_KEY}&language=en&category=${cat}${page ? `&page=${page}` : ''}`,
             { timeout: 10000 }
         );
 

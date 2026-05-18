@@ -5,7 +5,7 @@ import { generateArticleDeepDive } from '../services/aiService';
 import { chatWithAgent, searchWithAI } from '../services/agentService';
 import {
   ArrowLeft, BookmarkCheck, Bookmark, ExternalLink,
-  Globe, Clock, Brain, ChevronRight, ChevronDown, Menu, X, MessageCircle, Send
+  Globe, Clock, Brain, ChevronRight, ChevronDown, Menu, X, MessageCircle, Send, ArrowUp
 } from 'lucide-react';
 import SavedArticlesSidebar from '../components/layout/SavedArticlesSidebar';
 import DotWaveBackground from '../components/ui/DotWaveBackground';
@@ -741,7 +741,7 @@ export default function ArticleView() {
       )}
 
       {/* ── Main Article Scrollable Pane ─────────────── */}
-      <div style={{ flex: 1, minHeight: '100vh', overflowY: 'auto', position: 'relative', zIndex: 10, background: 'transparent', fontFamily: "'Inter', 'Outfit', sans-serif", paddingBottom: !article ? 0 : 140 }}>
+      <div style={{ flex: 1, height: '100vh', overflowY: 'auto', position: 'relative', zIndex: 10, background: 'transparent', fontFamily: "'Inter', 'Outfit', sans-serif", paddingBottom: !article ? 0 : 140 }}>
 
       {/* ── Floating Top-Left Menu Button ──────────────────────── */}
       <button
@@ -784,305 +784,6 @@ export default function ArticleView() {
       >
         {isChatOpen ? <X size={20} /> : <MessageCircle size={20} />}
       </button>
-
-      {/* ── Gemini-style Chat Panel ──────────────────────── */}
-      {isChatOpen && (
-        <div
-          ref={chatPanelRef}
-          onClick={() => isModeDropdownOpen && setIsModeDropdownOpen(false)}
-          style={{
-            position: 'absolute', top: 80, right: 24, zIndex: 100,
-            width: 400,
-            background: '#fff',
-            borderRadius: 28,
-            boxShadow: '0 8px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.06)',
-            border: '1px solid #e8eaed',
-            display: 'flex', flexDirection: 'column',
-            overflow: 'hidden',
-            animation: 'chatPopup 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            fontFamily: "'Google Sans', 'Inter', sans-serif"
-          }}
-        >
-          {/* ── Gemini-style Header ── */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '16px 20px 14px',
-            borderBottom: '1px solid #f1f3f4',
-            flexShrink: 0,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 36, height: 36, flexShrink: 0 }}>
-                <img src="/ai-logo.png" alt="AI" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#1f1f1f', letterSpacing: '-0.01em', lineHeight: 1.2 }}>Kenshiki AI</div>
-                <div style={{ fontSize: 11, color: '#80868b', fontWeight: 500, marginTop: 1 }}>
-                  {searchMode === 'pro' ? '🔍 Pro Search active' : searchMode === 'normal' ? '⚡ Web Search active' : '💬 Article mode'}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* ── Messages Area ── */}
-          <div
-            style={{
-              padding: '16px 18px',
-              height: 400,
-              overflowY: 'auto',
-              display: 'flex', flexDirection: 'column', gap: 18,
-              scrollbarWidth: 'thin', scrollbarColor: '#e8eaed transparent'
-            }}
-          >
-            {chatMessages.map((msg, idx) => {
-              const isUser = msg.sender === 'user';
-              let reasoning = null;
-              let mainText = msg.text || '';
-              if (!isUser && !msg.isMap) {
-                const match = mainText.match(/<reasoning>([\s\S]*?)<\/reasoning>/);
-                if (match) {
-                  reasoning = match[1].trim();
-                  mainText = mainText.replace(/<reasoning>[\s\S]*?<\/reasoning>/, '').trim();
-                }
-              }
-              return (
-                <div key={idx} style={{
-                  display: 'flex',
-                  flexDirection: isUser ? 'row-reverse' : 'row',
-                  gap: 10,
-                  alignItems: 'flex-start',
-                }}>
-                  {/* Avatar */}
-                  {!isUser && (
-                    <div style={{ flexShrink: 0, marginTop: 2 }}>
-                      <GsapAiSpinner spinning={!!msg.isNew} size={30} />
-                    </div>
-                  )}
-                  {isUser && (
-                    <div style={{
-                      width: 28, height: 28, borderRadius: '50%', flexShrink: 0, marginTop: 2,
-                      background: 'linear-gradient(135deg, #4285F4, #a855f7)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, fontWeight: 800, color: '#fff', letterSpacing: '-0.02em'
-                    }}>U</div>
-                  )}
-
-                  {/* Bubble */}
-                  <div style={isUser ? {
-                    maxWidth: '78%',
-                    background: '#e8f0fe',
-                    color: '#1a237e',
-                    padding: '10px 16px',
-                    borderRadius: 22, borderBottomRightRadius: 6,
-                    fontSize: 13.5, lineHeight: 1.65, fontWeight: 500,
-                    whiteSpace: 'pre-wrap',
-                  } : {
-                    flex: 1, color: '#202124', fontSize: 14, lineHeight: 1.7,
-                    minWidth: 0, paddingTop: 2,
-                  }}>
-                    {msg.isMap ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', background: '#f8f9fa', borderRadius: 16, border: '1px solid #e8eaed' }}>
-                        <div style={{ fontWeight: 600, color: '#202124' }}>{msg.text}</div>
-                        <button
-                          onClick={() => navigate('/app/map', { state: { searchPlace: { name: msg.location, lat: Number(msg.lat), lon: Number(msg.lng) } } })}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#1a73e8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: 700, fontSize: 12, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(26,115,232,0.3)' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#1557b0'}
-                          onMouseLeave={e => e.currentTarget.style.background = '#1a73e8'}
-                        >
-                          <Globe size={14} /> View on Map
-                        </button>
-                      </div>
-                    ) : isUser ? mainText : (
-                      <>
-                        <AnimatedMessage
-                          reasoning={reasoning}
-                          mainText={mainText}
-                          isNew={msg.isNew}
-                          msg={msg}
-                          setNotNew={() => {
-                            if (msg.isNew) {
-                              setChatMessages(prev => {
-                                const updated = [...prev];
-                                updated[idx] = { ...updated[idx], isNew: false };
-                                return updated;
-                              });
-                            }
-                          }}
-                        />
-                        {msg.sources && msg.sources.length > 0 && (
-                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e8eaed' }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: '#9aa0a6', letterSpacing: '0.06em', marginBottom: 6, textTransform: 'uppercase' }}>
-                              {msg.searchMode === 'pro' ? '🔍 Pro' : '⚡ Web'} · {msg.sources.length} source{msg.sources.length !== 1 ? 's' : ''}{msg.cached ? ' · Cached' : ''}
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                              {msg.sources.slice(0, 4).map((src, si) => (
-                                <a key={si} href={src.url} target="_blank" rel="noopener noreferrer"
-                                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#1a73e8', fontWeight: 600, textDecoration: 'none', padding: '5px 10px', background: '#e8f0fe', borderRadius: 10, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', transition: 'background 0.15s' }}
-                                  onMouseEnter={e => e.currentTarget.style.background = '#c5d8fc'}
-                                  onMouseLeave={e => e.currentTarget.style.background = '#e8f0fe'}
-                                >
-                                  <Globe size={9} style={{ flexShrink: 0 }} />
-                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{src.title || new URL(src.url).hostname}</span>
-                                  <ExternalLink size={9} style={{ marginLeft: 'auto', flexShrink: 0, color: '#6ba3f5' }} />
-                                </a>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Thinking loader */}
-            {isChatLoading && (
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <GsapAiSpinner spinning={true} size={42} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#202124', letterSpacing: '-0.01em' }}>
-                    {searchMode === 'pro' ? '🔍 Pro search…' : searchMode === 'normal' ? '⚡ Searching the web…' : '✨ Thinking…'}
-                  </span>
-                  <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-                    {[0, 0.16, 0.32].map(d => (
-                      <div key={d} style={{ width: 5, height: 5, borderRadius: '50%', background: 'linear-gradient(135deg,#1a73e8,#74b9ff)', animation: `dotBounce 1.2s ${d}s ease-in-out infinite` }} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* ── Gemini-style Input Area ── */}
-          <div style={{
-            padding: '12px 16px 16px',
-            background: '#fff',
-            borderTop: '1px solid #f1f3f4',
-            flexShrink: 0,
-          }}>
-            {/* Mode dropdown menu (appears above input) */}
-            {isModeDropdownOpen && (
-              <div style={{
-                marginBottom: 8,
-                background: '#fff',
-                border: '1px solid #e8eaed',
-                borderRadius: 16,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.12)',
-                overflow: 'hidden',
-                animation: 'fadeSlideUp 0.18s ease-out'
-              }}>
-                {[
-                  { id: null,     icon: '💬', label: 'Article Chat',  desc: 'Ask about this article' },
-                  { id: 'normal', icon: '⚡', label: 'Web Search',    desc: 'Search the live web' },
-                  { id: 'pro',    icon: '🔍', label: 'Pro Search',    desc: 'Deep multi-source search' },
-                ].map(m => (
-                  <button
-                    key={String(m.id)}
-                    onClick={() => { setSearchMode(m.id); setIsModeDropdownOpen(false); }}
-                    style={{
-                      width: '100%', display: 'flex', alignItems: 'center', gap: 12,
-                      padding: '10px 16px', border: 'none', cursor: 'pointer',
-                      background: searchMode === m.id ? '#e8f0fe' : 'transparent',
-                      textAlign: 'left', transition: 'background 0.15s',
-                    }}
-                    onMouseEnter={e => { if (searchMode !== m.id) e.currentTarget.style.background = '#f8f9fa'; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = searchMode === m.id ? '#e8f0fe' : 'transparent'; }}
-                  >
-                    <span style={{ fontSize: 18, lineHeight: 1 }}>{m.icon}</span>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: searchMode === m.id ? '#1a73e8' : '#202124' }}>{m.label}</div>
-                      <div style={{ fontSize: 11, color: '#80868b', marginTop: 1 }}>{m.desc}</div>
-                    </div>
-                    {searchMode === m.id && (
-                      <div style={{ marginLeft: 'auto', width: 8, height: 8, borderRadius: '50%', background: '#1a73e8' }} />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Input row */}
-            <div style={{
-              display: 'flex', alignItems: 'flex-end', gap: 8,
-              background: '#f8f9fa',
-              borderRadius: 26,
-              border: '1.5px solid #e8eaed',
-              padding: '6px 6px 6px 14px',
-              transition: 'border-color 0.2s, box-shadow 0.2s',
-            }}
-              onFocus={() => {}}
-            >
-              {/* Mode pill button — left side of input */}
-              <button
-                onClick={(e) => { e.stopPropagation(); setIsModeDropdownOpen(v => !v); }}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '5px 10px', borderRadius: 20,
-                  border: '1.5px solid',
-                  borderColor: searchMode ? '#1a73e8' : '#dadce0',
-                  background: searchMode ? '#e8f0fe' : '#fff',
-                  color: searchMode ? '#1a73e8' : '#5f6368',
-                  cursor: 'pointer', fontSize: 12, fontWeight: 700,
-                  transition: 'all 0.15s', flexShrink: 0,
-                  letterSpacing: '0.01em',
-                }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = '#1a73e8'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = searchMode ? '#1a73e8' : '#dadce0'}
-              >
-                <span style={{ fontSize: 14 }}>
-                  {searchMode === 'pro' ? '🔍' : searchMode === 'normal' ? '⚡' : '💬'}
-                </span>
-                <span>{searchMode === 'pro' ? 'Pro' : searchMode === 'normal' ? 'Web' : 'Chat'}</span>
-                <ChevronDown size={12} style={{ transform: isModeDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
-              </button>
-
-              {/* Text input */}
-              <input
-                type="text"
-                value={chatMessage}
-                onChange={e => setChatMessage(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) submitChatMessage(); }}
-                placeholder={
-                  searchMode === 'pro' ? 'Deep search the web…' :
-                  searchMode === 'normal' ? 'Search the web…' :
-                  'Ask anything about this article…'
-                }
-                style={{
-                  flex: 1, border: 'none', outline: 'none',
-                  background: 'transparent',
-                  fontSize: 14, color: '#202124',
-                  padding: '6px 4px',
-                  fontFamily: 'inherit',
-                }}
-              />
-
-              {/* Send button */}
-              <button
-                onClick={submitChatMessage}
-                disabled={isChatLoading || !chatMessage.trim()}
-                style={{
-                  width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                  background: (isChatLoading || !chatMessage.trim()) ? '#e8eaed' : 'linear-gradient(135deg, #1a73e8, #4285F4)',
-                  color: (isChatLoading || !chatMessage.trim()) ? '#9aa0a6' : '#fff',
-                  border: 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: (isChatLoading || !chatMessage.trim()) ? 'default' : 'pointer',
-                  transition: 'all 0.2s',
-                  boxShadow: (isChatLoading || !chatMessage.trim()) ? 'none' : '0 2px 8px rgba(26,115,232,0.35)',
-                }}
-                onMouseEnter={e => { if (!isChatLoading && chatMessage.trim()) e.currentTarget.style.transform = 'scale(1.08)'; }}
-                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-              >
-                <Send size={16} style={{ marginLeft: 2 }} />
-              </button>
-            </div>
-            <div style={{ textAlign: 'center', fontSize: 10, color: '#bdc1c6', marginTop: 8, letterSpacing: '0.02em' }}>
-              Kenshiki AI · Powered by Groq
-            </div>
-          </div>
-        </div>
-      )}
 
       {!article ? (
         <div style={{ minHeight: 'calc(100vh - 60px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: 32 }}>
@@ -1301,6 +1002,293 @@ export default function ArticleView() {
         </>
       )}
       </div> {/* End scrollable pane */}
+
+      {/* ── Full Page Side-by-Side Chat Panel ──────────────────────── */}
+      {isChatOpen && (
+        <div
+          ref={chatPanelRef}
+          onClick={() => isModeDropdownOpen && setIsModeDropdownOpen(false)}
+          style={{
+            position: 'relative', zIndex: 100,
+            width: '45vw', maxWidth: 600, minWidth: 400, height: '100vh',
+            background: '#fff',
+            borderLeft: '1px solid #e8eaed',
+            boxShadow: '-8px 0 40px rgba(0,0,0,0.06)',
+            display: 'flex', flexDirection: 'column',
+            overflow: 'hidden',
+            animation: 'chatPopup 0.28s cubic-bezier(0.34, 1.56, 0.64, 1)',
+            fontFamily: "'Google Sans', 'Inter', sans-serif"
+          }}
+        >
+          {/* ── Minimalist Claude-style Header ── */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '16px 20px',
+            borderBottom: '1px solid #e5e7eb',
+            flexShrink: 0,
+            background: '#ffffff',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 24, height: 24, flexShrink: 0, color: '#18181b' }}>
+                <Brain size={24} strokeWidth={1.5} />
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#18181b', letterSpacing: '-0.02em', fontFamily: "'Inter', sans-serif" }}>Kenshiki AI</div>
+                <div style={{ fontSize: 12, color: '#71717a', fontWeight: 400, marginTop: 2 }}>
+                  {searchMode === 'pro' ? 'Pro Search' : searchMode === 'normal' ? 'Web Search' : 'Article Context'}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsChatOpen(false)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#a1a1aa', padding: 4, transition: 'color 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#18181b'}
+              onMouseLeave={e => e.currentTarget.style.color = '#a1a1aa'}
+            >
+              <X size={20} strokeWidth={1.5} />
+            </button>
+          </div>
+
+          {/* ── Messages Area ── */}
+          <div
+            style={{
+              padding: '16px 18px',
+              flex: 1,
+              overflowY: 'auto',
+              display: 'flex', flexDirection: 'column', gap: 18,
+              scrollbarWidth: 'thin', scrollbarColor: '#e8eaed transparent'
+            }}
+          >
+            {chatMessages.map((msg, idx) => {
+              const isUser = msg.sender === 'user';
+              let reasoning = null;
+              let mainText = msg.text || '';
+              if (!isUser && !msg.isMap) {
+                const match = mainText.match(/<reasoning>([\s\S]*?)<\/reasoning>/);
+                if (match) {
+                  reasoning = match[1].trim();
+                  mainText = mainText.replace(/<reasoning>[\s\S]*?<\/reasoning>/, '').trim();
+                }
+              }
+              return (
+                <div key={idx} style={{
+                  display: 'flex',
+                  flexDirection: isUser ? 'row-reverse' : 'row',
+                  gap: 10,
+                  alignItems: 'flex-start',
+                }}>
+                  {/* Avatar */}
+                  {!isUser && (
+                    <div style={{ flexShrink: 0, marginTop: 4, color: '#18181b' }}>
+                      <Brain size={20} strokeWidth={1.5} />
+                    </div>
+                  )}
+
+                  {/* Bubble */}
+                  <div style={isUser ? {
+                    maxWidth: '85%',
+                    background: '#f4f4f5',
+                    color: '#18181b',
+                    padding: '12px 18px',
+                    borderRadius: 20, borderBottomRightRadius: 6,
+                    fontSize: 15, lineHeight: 1.6, fontWeight: 400,
+                    fontFamily: "'Inter', sans-serif",
+                    whiteSpace: 'pre-wrap',
+                  } : {
+                    flex: 1, color: '#18181b', fontSize: 15.5, lineHeight: 1.7,
+                    fontFamily: "'Charter', 'Georgia', serif",
+                    minWidth: 0, paddingTop: 2,
+                  }}>
+                    {msg.isMap ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 16px', background: '#f8f9fa', borderRadius: 16, border: '1px solid #e8eaed' }}>
+                        <div style={{ fontWeight: 600, color: '#202124' }}>{msg.text}</div>
+                        <button
+                          onClick={() => navigate('/app/map', { state: { searchPlace: { name: msg.location, lat: Number(msg.lat), lon: Number(msg.lng) } } })}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, background: '#1a73e8', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: 20, cursor: 'pointer', fontWeight: 700, fontSize: 12, transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(26,115,232,0.3)' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#1557b0'}
+                          onMouseLeave={e => e.currentTarget.style.background = '#1a73e8'}
+                        >
+                          <Globe size={14} /> View on Map
+                        </button>
+                      </div>
+                    ) : isUser ? mainText : (
+                      <>
+                        <AnimatedMessage
+                          reasoning={reasoning}
+                          mainText={mainText}
+                          isNew={msg.isNew}
+                          msg={msg}
+                          setNotNew={() => {
+                            if (msg.isNew) {
+                              setChatMessages(prev => {
+                                const updated = [...prev];
+                                updated[idx] = { ...updated[idx], isNew: false };
+                                return updated;
+                              });
+                            }
+                          }}
+                        />
+                        {msg.sources && msg.sources.length > 0 && (
+                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e8eaed' }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#9aa0a6', letterSpacing: '0.06em', marginBottom: 6, textTransform: 'uppercase' }}>
+                              {msg.searchMode === 'pro' ? '🔍 Pro' : '⚡ Web'} · {msg.sources.length} source{msg.sources.length !== 1 ? 's' : ''}{msg.cached ? ' · Cached' : ''}
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {msg.sources.slice(0, 4).map((src, si) => (
+                                <a key={si} href={src.url} target="_blank" rel="noopener noreferrer"
+                                  style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#1a73e8', fontWeight: 600, textDecoration: 'none', padding: '5px 10px', background: '#e8f0fe', borderRadius: 10, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', transition: 'background 0.15s' }}
+                                  onMouseEnter={e => e.currentTarget.style.background = '#c5d8fc'}
+                                  onMouseLeave={e => e.currentTarget.style.background = '#e8f0fe'}
+                                >
+                                  <Globe size={9} style={{ flexShrink: 0 }} />
+                                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{src.title || new URL(src.url).hostname}</span>
+                                  <ExternalLink size={9} style={{ marginLeft: 'auto', flexShrink: 0, color: '#6ba3f5' }} />
+                                </a>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Thinking loader */}
+            {isChatLoading && (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', paddingLeft: 4 }}>
+                <Brain size={20} strokeWidth={1.5} color="#a1a1aa" style={{ animation: 'pulse 2s infinite' }} />
+                <span style={{ fontSize: 14, color: '#71717a', fontFamily: "'Inter', sans-serif", fontWeight: 400 }}>
+                  {searchMode === 'pro' ? 'Analyzing deeply...' : searchMode === 'normal' ? 'Searching...' : 'Thinking...'}
+                </span>
+                <style>{`@keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }`}</style>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* ── Minimalist Input Area ── */}
+          <div style={{
+            padding: '16px 20px 24px',
+            background: '#ffffff',
+            borderTop: '1px solid #e5e7eb',
+            flexShrink: 0,
+          }}>
+            {/* Mode dropdown menu */}
+            {isModeDropdownOpen && (
+              <div style={{
+                marginBottom: 12,
+                background: '#ffffff',
+                border: '1px solid #e5e7eb',
+                borderRadius: 12,
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.01)',
+                overflow: 'hidden',
+                animation: 'fadeSlideUp 0.15s ease-out'
+              }}>
+                {[
+                  { id: null,     label: 'Article Context',  desc: 'Ask about this specific article' },
+                  { id: 'normal', label: 'Web Search',    desc: 'Search the live web' },
+                  { id: 'pro',    label: 'Pro Search',    desc: 'Deep multi-source research' },
+                ].map(m => (
+                  <button
+                    key={String(m.id)}
+                    onClick={() => { setSearchMode(m.id); setIsModeDropdownOpen(false); }}
+                    style={{
+                      width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '12px 16px', border: 'none', cursor: 'pointer',
+                      background: searchMode === m.id ? '#f4f4f5' : 'transparent',
+                      textAlign: 'left', transition: 'background 0.15s',
+                    }}
+                    onMouseEnter={e => { if (searchMode !== m.id) e.currentTarget.style.background = '#fafafa'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = searchMode === m.id ? '#f4f4f5' : 'transparent'; }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: '#18181b', fontFamily: "'Inter', sans-serif" }}>{m.label}</div>
+                      <div style={{ fontSize: 12, color: '#71717a', marginTop: 2, fontFamily: "'Inter', sans-serif" }}>{m.desc}</div>
+                    </div>
+                    {searchMode === m.id && (
+                      <div style={{ marginLeft: 'auto', color: '#18181b' }}><BookmarkCheck size={16} /></div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input row */}
+            <div style={{
+              display: 'flex', alignItems: 'flex-end', gap: 10,
+              background: '#f4f4f5',
+              borderRadius: 24,
+              border: '1px solid transparent',
+              padding: '8px 8px 8px 16px',
+              transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
+            }}
+              onFocus={(e) => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.borderColor = '#e5e7eb'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)'; }}
+              onBlur={(e) => { e.currentTarget.style.background = '#f4f4f5'; e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.boxShadow = 'none'; }}
+            >
+              {/* Mode pill button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); setIsModeDropdownOpen(v => !v); }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px', borderRadius: 16,
+                  border: '1px solid #e5e7eb',
+                  background: '#ffffff',
+                  color: '#18181b',
+                  cursor: 'pointer', fontSize: 13, fontWeight: 500, fontFamily: "'Inter', sans-serif",
+                  transition: 'all 0.2s', flexShrink: 0,
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = '#f4f4f5'}
+                onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
+              >
+                <span>{searchMode === 'pro' ? 'Pro' : searchMode === 'normal' ? 'Web' : 'Article'}</span>
+                <ChevronDown size={14} style={{ opacity: 0.6, transform: isModeDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+              </button>
+
+              <input
+                type="text"
+                value={chatMessage}
+                onChange={e => setChatMessage(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) submitChatMessage(); }}
+                placeholder={
+                  searchMode === 'pro' ? 'Deep search the web...' :
+                  searchMode === 'normal' ? 'Search the web...' :
+                  'Ask about this article...'
+                }
+                style={{
+                  flex: 1, border: 'none', background: 'transparent',
+                  padding: '8px 0', fontSize: 15, color: '#18181b', fontFamily: "'Inter', sans-serif",
+                  lineHeight: 1.5, outline: 'none',
+                }}
+              />
+
+              {/* Send button */}
+              <button
+                onClick={submitChatMessage}
+                disabled={isChatLoading || !chatMessage.trim()}
+                style={{
+                  width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                  background: (isChatLoading || !chatMessage.trim()) ? '#e5e7eb' : '#18181b',
+                  color: (isChatLoading || !chatMessage.trim()) ? '#a1a1aa' : '#ffffff',
+                  border: 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: (isChatLoading || !chatMessage.trim()) ? 'default' : 'pointer',
+                  transition: 'background 0.2s, transform 0.1s',
+                }}
+                onMouseEnter={e => { if (!isChatLoading && chatMessage.trim()) e.currentTarget.style.transform = 'scale(1.05)'; }}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                <ArrowUp size={20} strokeWidth={2} />
+              </button>
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 10, color: '#bdc1c6', marginTop: 8, letterSpacing: '0.02em' }}>
+              Kenshiki AI · Powered by Groq
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

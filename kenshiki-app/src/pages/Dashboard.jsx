@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, MapPin, ArrowRight, Zap, Clock, TrendingUp } from 'lucide-react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { fetchNewsFeed } from '../services/newsApi';
@@ -17,7 +17,11 @@ const VALID_CATEGORIES = new Set(Object.keys(CAT_META));
 
 export default function Dashboard() {
   const [articles, setArticles] = useState([]);
+  const [nextPage, setNextPage] = useState(null);
   const [loading, setLoading]   = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [localQuery, setLocalQuery] = useState(null);
+  const observerTarget = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { registerArticles } = useAgent();
@@ -36,23 +40,93 @@ export default function Dashboard() {
 
   const loadNews = async (cat) => {
     setLoading(true);
+    setNextPage(null);
+    setLocalQuery(null);
+
     if (cat === 'local') {
       if ('geolocation' in navigator) {
         navigator.geolocation.getCurrentPosition(async (pos) => {
           try {
             const res  = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${pos.coords.latitude}&lon=${pos.coords.longitude}&format=json`);
             const data = await res.json();
-            const city = data.address?.city || data.address?.town || data.address?.state || 'Local';
-            setArticles(await fetchNewsFeed('local', city));
-          } catch { setArticles(await fetchNewsFeed('local', 'Local')); }
+            const addr = data.address || {};
+            const city = addr.city || addr.town || addr.village || addr.suburb || addr.neighbourhood || addr.county || addr.state_district || addr.state || 'Local';
+            const query = `"${city}" local news`;
+            setLocalQuery(query);
+            const result = await fetchNewsFeed('local', query);
+            setArticles(result.articles || []);
+            setNextPage(result.nextPage || null);
+          } catch {
+            const result = await fetchNewsFeed('local', 'Local news');
+            setArticles(result.articles || []);
+            setNextPage(result.nextPage || null);
+            setLocalQuery('Local news');
+          }
           setLoading(false);
-        }, async () => { setArticles(await fetchNewsFeed('local', 'Local')); setLoading(false); });
+        }, async () => {
+          try {
+            const ipRes = await fetch('https://ipwho.is/');
+            const ipData = await ipRes.json();
+            const city = ipData.city || ipData.region || 'Local';
+            const query = `"${city}" local news`;
+            setLocalQuery(query);
+            const result = await fetchNewsFeed('local', query);
+            setArticles(result.articles || []);
+            setNextPage(result.nextPage || null);
+          } catch {
+            const result = await fetchNewsFeed('local', 'Local news');
+            setArticles(result.articles || []);
+            setNextPage(result.nextPage || null);
+            setLocalQuery('Local news');
+          }
+          setLoading(false);
+        }, { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 });
         return;
       }
     }
-    setArticles(await fetchNewsFeed(cat));
+    const result = await fetchNewsFeed(cat);
+    setArticles(result.articles || []);
+    setNextPage(result.nextPage || null);
     setLoading(false);
   };
+
+  const loadMore = useCallback(async () => {
+    if (!nextPage || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      let result;
+      if (categoryPath === 'local' && localQuery) {
+        result = await fetchNewsFeed('local', localQuery, nextPage);
+      } else {
+        result = await fetchNewsFeed(categoryPath, null, nextPage);
+      }
+      if (result && result.articles) {
+        setArticles(prev => {
+          const existingIds = new Set(prev.map(a => a.id));
+          const newArticles = result.articles.filter(a => !existingIds.has(a.id));
+          return [...prev, ...newArticles];
+        });
+        setNextPage(result.nextPage || null);
+      }
+    } catch (e) {
+      console.error("Failed to load more news:", e);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextPage, loadingMore, categoryPath, localQuery]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0].isIntersecting && nextPage && !loadingMore) {
+          loadMore();
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (observerTarget.current) observer.observe(observerTarget.current);
+    return () => observer.disconnect();
+  }, [nextPage, loadingMore, loadMore]);
 
   const calcRead   = (item) => Math.max(2, Math.ceil((item?.description?.length || 200) / 100));
   const openArticle = (item) => navigate('/app/article', { state: { article: item } });
@@ -534,6 +608,21 @@ export default function Dashboard() {
               })}
             </div>
           )}
+
+          {/* Infinite Scroll Observer Target */}
+          {nextPage && (
+            <div ref={observerTarget} style={{ height: 40, marginTop: 20, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              {loadingMore && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <RefreshCw size={16} style={{ animation: 'spinAnim 0.8s linear infinite', color: meta.accent }} />
+                  <span style={{ fontSize: 12, fontWeight: 600, color: meta.accent, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                    Loading more...
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
         </div>
       </div>
 

@@ -17,14 +17,10 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 const SATELLITE_STYLE = {
   version: 8,
   sources: { 
-    satellite: { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
-    roads: { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
-    labels: { type: 'raster', tiles: ['https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 }
+    satellite: { type: 'raster', tiles: ['https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'], tileSize: 256, maxzoom: 22 }
   },
   layers: [
-    { id: 'satellite-layer', type: 'raster', source: 'satellite' },
-    { id: 'roads-layer', type: 'raster', source: 'roads' },
-    { id: 'labels-layer', type: 'raster', source: 'labels' }
+    { id: 'satellite-layer', type: 'raster', source: 'satellite' }
   ],
 };
 
@@ -33,9 +29,10 @@ const STREET_STYLE = {
   sources: { 
     street: { 
       type: 'raster', 
-      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'], 
+      tiles: ['https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'], 
       tileSize: 256,
-      attribution: '© Esri — Source: Esri, DeLorme, NAVTEQ, USGS, Intermap, iPC, NRCAN, Esri Japan, METI, Esri China (Hong Kong), Esri (Thailand), TomTom'
+      maxzoom: 22,
+      attribution: 'Map data © Google'
     } 
   },
   layers: [{ id: 'street-layer', type: 'raster', source: 'street' }],
@@ -997,7 +994,7 @@ function SemicircleWave({ waveType, id }) {
 }
 
 // ── Map Controls ─────────────────────────────────────────────────────────────
-function MapControls({ mapRef, isSatellite, onToggleStyle }) {
+function MapControls({ mapRef, isSatellite, onToggleStyle, onLocateMe }) {
   const onZoomIn = () => mapRef.current?.getMap().zoomIn();
   const onZoomOut = () => mapRef.current?.getMap().zoomOut();
   const onReset = () => {
@@ -1070,6 +1067,22 @@ function MapControls({ mapRef, isSatellite, onToggleStyle }) {
         onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.7)'; e.currentTarget.style.color = '#1e293b'; e.currentTarget.style.transform = 'scale(1)'; }}
       >
         <Layers size={20} strokeWidth={2} style={{ color: isSatellite ? '#1e293b' : '#4285F4' }} />
+      </button>
+
+      {/* Locate Me Button */}
+      <button 
+        onClick={onLocateMe}
+        title="My Location"
+        style={{ 
+          ...btnStyle, 
+          borderRadius: 14, 
+          boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+          border: '1px solid rgba(255,255,255,0.2)'
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = '#fff'; e.currentTarget.style.color = '#4285F4'; e.currentTarget.style.transform = 'scale(1.05)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.7)'; e.currentTarget.style.color = '#1e293b'; e.currentTarget.style.transform = 'scale(1)'; }}
+      >
+        <Navigation size={20} strokeWidth={2} />
       </button>
     </div>
   );
@@ -1334,7 +1347,8 @@ export default function MapViewer() {
     }
     if (!initialArticle) return;
     setAnalyzing(true);
-    const result = await getArticleIntelligence(initialArticle);
+    const fallback = initialPlace ? [initialPlace.lat, initialPlace.lon] : [20, 0];
+    const result = await getArticleIntelligence(initialArticle, fallback);
     setResolvedArticle(result);
     setAnalyzing(false);
     if (!result.coords) return;
@@ -1390,8 +1404,8 @@ export default function MapViewer() {
       {/* Map Data Year Badge — dynamic per mode */}
       {(() => {
         const [badgeHover, setBadgeHover] = React.useState(false);
-        const satelliteInfo = { icon: '🛰️', label: 'Satellite Imagery', year: '~2023–2025', note: 'Esri satellite photos are 1–3 years old depending on the region.' };
-        const streetInfo   = { icon: '🗺️', label: 'Street Map Data',   year: '~2025–2026', note: 'Esri street & places data is updated every 6–12 months.' };
+        const satelliteInfo = { icon: '🛰️', label: 'Satellite Imagery', year: 'Real-Time / Recent', note: 'Google Maps high-resolution hybrid satellite imagery.' };
+        const streetInfo   = { icon: '🗺️', label: 'Street Map Data',   year: 'Real-Time / Recent', note: 'Google Maps detailed street vectors and routing data.' };
         const info = isSatellite ? satelliteInfo : streetInfo;
         return (
           <div
@@ -1439,7 +1453,7 @@ export default function MapViewer() {
                 <div style={{ fontWeight: 800, color: '#fff', marginBottom: 4, fontSize: 13 }}>ℹ️ How fresh is this map?</div>
                 {info.note}
                 <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,0.1)', fontSize: 11, color: '#94a3b8' }}>
-                  Source: Esri ArcGIS · Switch modes with the <strong style={{ color: '#e2e8f0' }}>layers button</strong> →
+                  Source: Google Maps HD · Switch modes with the <strong style={{ color: '#e2e8f0' }}>layers button</strong> →
                 </div>
               </div>
             )}
@@ -1461,8 +1475,77 @@ export default function MapViewer() {
         interactive={true}
         dragPan={true}
         touchZoomRotate={true}
+        maxZoom={22}
       >
-        <MapControls mapRef={mapRef} isSatellite={isSatellite} onToggleStyle={() => setIsSatellite(!isSatellite)} />
+        <MapControls 
+          mapRef={mapRef} 
+          isSatellite={isSatellite} 
+          onToggleStyle={() => setIsSatellite(!isSatellite)}
+          onLocateMe={() => {
+            if ('geolocation' in navigator) {
+              navigator.geolocation.getCurrentPosition(
+                async (pos) => {
+                  const lat = pos.coords.latitude;
+                  const lon = pos.coords.longitude;
+                  
+                  // Reverse geocode to get the name of the place
+                  try {
+                    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`);
+                    const data = await res.json();
+                    const addr = data.address || {};
+                    const name = addr.city || addr.town || addr.village || addr.suburb || addr.neighbourhood || addr.county || addr.state_district || addr.state || 'Your Location';
+                    
+                    mapRef.current?.getMap().flyTo({
+                      center: [lon, lat],
+                      zoom: 14,
+                      pitch: 45,
+                      bearing: 15,
+                      duration: 3000,
+                      essential: true
+                    });
+                    
+                    // Set it as a searched place so you can read news about it
+                    handlePlaceSelect({ name, displayName: data.display_name || name, lat, lon });
+                  } catch (e) {
+                    mapRef.current?.getMap().flyTo({
+                      center: [lon, lat],
+                      zoom: 14,
+                      pitch: 45,
+                      duration: 3000,
+                      essential: true
+                    });
+                  }
+                },
+                async (err) => {
+                  console.error("Geolocation error:", err);
+                  try {
+                    const ipRes = await fetch('https://ipwho.is/');
+                    const ipData = await ipRes.json();
+                    if (ipData.success && ipData.latitude && ipData.longitude) {
+                      const name = ipData.city || ipData.region || 'Your Location';
+                      mapRef.current?.getMap().flyTo({
+                        center: [ipData.longitude, ipData.latitude],
+                        zoom: 13,
+                        pitch: 45,
+                        bearing: 15,
+                        duration: 3000,
+                        essential: true
+                      });
+                      handlePlaceSelect({ name, displayName: `${name}, ${ipData.country || ''}`, lat: ipData.latitude, lon: ipData.longitude });
+                      return;
+                    }
+                  } catch (e) {
+                    console.error("IP fallback failed:", e);
+                  }
+                  alert("Could not determine your precise location. Please ensure location services are enabled.");
+                },
+                { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+              );
+            } else {
+              alert("Geolocation is not supported by your browser.");
+            }
+          }}
+        />
 
 
 
