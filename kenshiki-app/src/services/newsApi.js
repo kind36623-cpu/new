@@ -26,6 +26,31 @@ async function fetchSerperImage(query) {
   }
 }
 
+async function fetchResourceImage(url) {
+  try {
+    if (!url) return null;
+    const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(url);
+    const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(4000) });
+    const text = await res.text();
+    
+    // Check if Google News JS redirect
+    let finalUrl = url;
+    const redirectMatch = text.match(/window\.location\.replace\('([^']+)'\)/) || text.match(/<a[^>]+href="([^"]+)"[^>]*>click here<\/a>/i);
+    
+    let html = text;
+    if (redirectMatch) {
+       finalUrl = redirectMatch[1];
+       const res2 = await fetch('https://corsproxy.io/?' + encodeURIComponent(finalUrl), { signal: AbortSignal.timeout(4000) });
+       html = await res2.text();
+    }
+    
+    const ogMatch = html.match(/<meta[^>]+property="og:image"[^>]+content="([^">]+)"/i) || html.match(/<meta[^>]+content="([^">]+)"[^>]+property="og:image"/i);
+    return ogMatch ? ogMatch[1] : null;
+  } catch (error) {
+    return null;
+  }
+}
+
 const CATEGORY_THEME_IMAGES = {
   economic: [
     "https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?q=80&w=800&auto=format&fit=crop",
@@ -233,6 +258,9 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
         thumb = null;
       }
 
+      // First extract the raw link to pass to fetchResourceImage
+      const rawLink = item.querySelector("link")?.textContent;
+
       return {
         id: `news-${index}-${Date.now()}`,
         title: item.querySelector("title")?.textContent || "Analysis Insight",
@@ -243,12 +271,16 @@ export const fetchNewsFeed = async (category = 'world', explicitQuery = null, pa
         description: cleanDesc.length > 200 ? cleanDesc.slice(0, 200) + '...' : cleanDesc || "New global development report.",
         location: explicitQuery ? explicitQuery.replace(/["']/g, '').replace(/ local news/i, '').trim() : "Global",
         thumbnail: thumb,
+        url: rawLink, // Keep the URL so we can fetch the og:image
         color: "blue",
         coords: null
       };
     });
 
     await Promise.all(rssArticles.map(async (art) => {
+      if (!art.thumbnail && art.url) {
+        art.thumbnail = await fetchResourceImage(art.url);
+      }
       if (!art.thumbnail) {
         art.thumbnail = await fetchSerperImage(art.title);
       }
