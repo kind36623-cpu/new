@@ -1,4 +1,4 @@
-// Voice agent — calls Groq directly, optimized for minimal latency.
+// Voice agent — calls Groq directly for minimal latency, falls back to backend.
 const GROQ_KEY    = import.meta.env.VITE_GROQ_API_KEY || '';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL   || '';
 
@@ -32,22 +32,37 @@ export const processVoiceCommand = async (
 ) => {
   // Cancel any previous in-flight request immediately
   cancelPendingVoiceRequest();
-  currentController = new AbortController();
-  const signal = currentController.signal;
-  const timeout = setTimeout(() => currentController?.abort(), 8000); // 8s hard timeout
+
+  // Create a fresh controller AFTER cancelling the old one
+  const controller = new AbortController();
+  currentController = controller;
+  const { signal } = controller;
+
+  // Hard 8s timeout
+  const timeout = setTimeout(() => {
+    if (currentController === controller) {
+      controller.abort();
+      currentController = null;
+    }
+  }, 8000);
 
   const systemMessage = SYSTEM_PROMPT
     .replace('{currentPage}', currentPage)
     .replace('{articleTitles}', articleTitles.slice(0, 5).join('; ') || 'none');
 
-  // Only last 4 messages for speed (less tokens = faster)
+  // Only last 4 messages for speed (fewer tokens = faster)
   const messages = [
     { role: 'system', content: systemMessage },
     ...history.slice(-4),
     { role: 'user', content: transcript },
   ];
 
-  // Direct Groq call (fastest path — no backend hop)
+  const cleanup = () => {
+    clearTimeout(timeout);
+    if (currentController === controller) currentController = null;
+  };
+
+  // ── Direct Groq call (fastest path — no backend hop) ──────────────────────
   if (GROQ_KEY) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -65,8 +80,7 @@ export const processVoiceCommand = async (
         }),
         signal,
       });
-      clearTimeout(timeout);
-      currentController = null;
+      cleanup();
 
       if (!res.ok) throw new Error(`Groq ${res.status}`);
       const data = await res.json();
@@ -77,29 +91,40 @@ export const processVoiceCommand = async (
         try {
           const parsed = JSON.parse(content);
           if (parsed.tool) return { type: 'tool_call', name: parsed.tool, args: parsed.args || {} };
-        } catch { /* not json */ }
+        } catch { /* not json, fall through */ }
       }
       return { type: 'text', content };
 
     } catch (err) {
-      clearTimeout(timeout);
-      currentController = null;
-      if (err.name === 'AbortError') return null; // Cancelled — don't do anything
+      cleanup();
+      if (err.name === 'AbortError') return null; // Cancelled — caller handles this
       if (import.meta.env.DEV) console.warn('[KIRA] Groq direct failed, trying backend:', err.message);
     }
   }
 
-  // Fallback: backend proxy
+  // ── Fallback: backend proxy ────────────────────────────────────────────────
   if (BACKEND_URL) {
+    // Need a fresh signal since the old one may be aborted
+    const fallbackController = new AbortController();
+    currentController = fallbackController;
+    const fallbackTimeout = setTimeout(() => fallbackController.abort(), 8000);
+
     try {
       const res = await fetch(`${BACKEND_URL}/api/ai/voice`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript, currentPage, articleTitles, history: history.slice(-4) }),
+        signal: fallbackController.signal,
       });
+      clearTimeout(fallbackTimeout);
+      if (currentController === fallbackController) currentController = null;
+
       if (!res.ok) throw new Error(`Backend ${res.status}`);
       return await res.json();
     } catch (err) {
+      clearTimeout(fallbackTimeout);
+      if (currentController === fallbackController) currentController = null;
+      if (err.name === 'AbortError') return null;
       if (import.meta.env.DEV) console.error('[KIRA] Backend error:', err);
     }
   }

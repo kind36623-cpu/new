@@ -68,15 +68,27 @@ export function AgentProvider({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Keep refs to navigate/location to avoid stale closures
+  const navigateRef = useRef(navigate);
+  const locationRef = useRef(location);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+  useEffect(() => { locationRef.current = location; }, [location]);
+
   const updateReplyAndHistory = useCallback((replyText) => {
     setLastReply(replyText);
     chatHistoryRef.current.push({ role: 'assistant', content: replyText });
     if (chatHistoryRef.current.length > 16) chatHistoryRef.current = chatHistoryRef.current.slice(-16);
   }, []);
 
+  // ── Forward-declare startRecognition ref so speak() can call it ───────────
+  const startRecognitionRef = useRef(null);
+
   // ── TTS ────────────────────────────────────────────────────────────────────
   const speak = useCallback((text, onEndCallback) => {
-    if (!text) return;
+    if (!text) {
+      if (onEndCallback) onEndCallback();
+      return;
+    }
     window.speechSynthesis.cancel();
     stateRef.current.isSpeaking = true;
     setAgentStatus('speaking');
@@ -107,23 +119,42 @@ export function AgentProvider({ children }) {
 
     const done = () => {
       stateRef.current.isSpeaking = false;
-      setAgentStatus('idle');
       const i = activeUtterances.indexOf(utter);
       if (i > -1) activeUtterances.splice(i, 1);
-      if (onEndCallback) onEndCallback();
+      if (onEndCallback) {
+        onEndCallback();
+      } else if (stateRef.current.isContinuous) {
+        // Auto-restart mic after speaking (no explicit callback)
+        setAgentStatus('idle');
+        setTimeout(() => startRecognitionRef.current?.(), 250);
+      } else {
+        setAgentStatus('idle');
+      }
     };
-    utter.onend = done;
-    utter.onerror = () => done();
+    utter.onend   = done;
+    utter.onerror = (e) => {
+      // Chrome sometimes fires 'interrupted' when we cancel; treat as normal end
+      if (e.error !== 'interrupted') console.warn('[KIRA TTS] error:', e.error);
+      done();
+    };
     window.speechSynthesis.speak(utter);
+
+    // Chrome bug: long utterances can silently stall. Watchdog to resume.
+    const watchdog = setInterval(() => {
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+    }, 5000);
+    utter.onend = (e) => {
+      clearInterval(watchdog);
+      done();
+    };
+    utter.onerror = (e) => {
+      clearInterval(watchdog);
+      if (e.error !== 'interrupted') console.warn('[KIRA TTS] error:', e.error);
+      done();
+    };
   }, []);
 
   // ── Dispatch tool calls ─────────────────────────────────────────────────────
-  // Using a ref to dispatch so recognition callbacks always have the latest version
-  const navigateRef = useRef(navigate);
-  const locationRef = useRef(location);
-  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
-  useEffect(() => { locationRef.current = location; }, [location]);
-
   const dispatchToolCall = useCallback((tool, args) => {
     switch (tool) {
       case 'navigate_to_page': {
@@ -132,22 +163,17 @@ export function AgentProvider({ children }) {
           if (args.page === 'article') {
             let articleToOpen = fullArticlesRef.current[0];
             if (!articleToOpen) {
-              // Try loading from saved articles
               try {
                 const saved = JSON.parse(localStorage.getItem('kenshiki_saved_articles') || '[]');
-                if (saved.length > 0) {
-                  articleToOpen = saved[0];
-                }
-              } catch (e) {
-                console.warn(e);
-              }
+                if (saved.length > 0) articleToOpen = saved[0];
+              } catch (e) { console.warn(e); }
             }
             if (articleToOpen) {
               navigateRef.current(route, { state: { article: articleToOpen } });
               const reply = `Opening the intelligence brief for: ${articleToOpen.title}`;
               speak(reply); updateReplyAndHistory(reply);
             } else {
-              speak("I couldn't find any articles loaded or saved to open a brief for. Let's go to the news feed first.");
+              speak("I couldn't find any articles loaded or saved. Let's go to the news feed first.");
               navigateRef.current('/app');
             }
           } else {
@@ -202,7 +228,7 @@ export function AgentProvider({ children }) {
     setLastTranscript(transcript);
     setInterimText('');
 
-    // 1. Try instant local keyword matching first (zero latency)
+    // 1. Instant local keyword matching (zero latency)
     const localCmd = matchLocalCommand(transcript);
     if (localCmd) {
       stateRef.current.isProcessing = false;
@@ -219,7 +245,14 @@ export function AgentProvider({ children }) {
     );
     stateRef.current.isProcessing = false;
 
-    if (!result) return; // Cancelled
+    if (!result) {
+      // Request was cancelled — restart mic if still in continuous mode
+      if (stateRef.current.isContinuous) {
+        setAgentStatus('idle');
+        setTimeout(() => startRecognitionRef.current?.(), 200);
+      }
+      return;
+    }
     if (result.type === 'tool_call') {
       dispatchToolCall(result.name, result.args);
     } else {
@@ -228,32 +261,39 @@ export function AgentProvider({ children }) {
     }
   }, [dispatchToolCall, speak, updateReplyAndHistory]);
 
-  // ── Recognition — uses refs, not closures, to avoid stale state ───────────
+  // Keep processCommand up-to-date inside recognition callbacks
   const processCommandRef = useRef(processCommand);
   useEffect(() => { processCommandRef.current = processCommand; }, [processCommand]);
 
+  // ── Recognition ────────────────────────────────────────────────────────────
   const startRecognition = useCallback(() => {
+    // Guards — don't start if not in continuous mode, or already busy
     if (!stateRef.current.isContinuous) return;
     if (stateRef.current.isSpeaking || stateRef.current.isProcessing) return;
 
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) { alert('Speech recognition not supported. Use Chrome or Edge.'); return; }
+    if (!SR) {
+      alert('Speech recognition not supported. Use Chrome or Edge.');
+      return;
+    }
 
-    // Stop any existing session cleanly
+    // Abort any existing session cleanly
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
     }
 
     const rec = new SR();
-    rec.lang             = 'en-US';
-    rec.continuous       = false;
-    rec.interimResults   = true;
-    rec.maxAlternatives  = 1;
+    rec.lang            = 'en-US';
+    rec.continuous      = false; // single-shot; we restart manually for reliability
+    rec.interimResults  = true;
+    rec.maxAlternatives = 1;
     recognitionRef.current = rec;
 
-    rec.onstart  = () => { setIsListening(true); setAgentStatus('listening'); };
-    rec.onspeechstart = () => setAgentStatus('listening');
+    rec.onstart = () => {
+      setIsListening(true);
+      setAgentStatus('listening');
+    };
 
     rec.onresult = (event) => {
       let interim = '', final = '';
@@ -273,26 +313,36 @@ export function AgentProvider({ children }) {
     rec.onerror = (e) => {
       setIsListening(false);
       console.warn('[KIRA] Mic error:', e.error);
+
+      // Fatal errors — stop continuous mode
       if (e.error === 'not-allowed' || e.error === 'audio-capture' || e.error === 'service-not-allowed') {
         stateRef.current.isContinuous = false;
         setIsContinuous(false);
         setAgentStatus('idle');
-        speak('Microphone blocked. Please allow microphone access in your browser settings, then try again.');
+        speak('Microphone access was blocked. Please allow microphone access in your browser settings, then try again.');
         return;
       }
+
       setAgentStatus('idle');
-      // Restart after brief delay for recoverable errors (no-speech, network, etc.)
-      if (stateRef.current.isContinuous) {
-        setTimeout(() => startRecognition(), 300);
+
+      // Recoverable errors (no-speech, aborted, network) — restart after delay
+      if (stateRef.current.isContinuous && !stateRef.current.isSpeaking && !stateRef.current.isProcessing) {
+        setTimeout(() => startRecognitionRef.current?.(), 400);
       }
     };
 
     rec.onend = () => {
       setIsListening(false);
       recognitionRef.current = null;
-      if (stateRef.current.isContinuous && !stateRef.current.isSpeaking && !stateRef.current.isProcessing) {
+
+      // Only restart if continuous mode is on AND we're not speaking/processing
+      if (
+        stateRef.current.isContinuous &&
+        !stateRef.current.isSpeaking &&
+        !stateRef.current.isProcessing
+      ) {
         setAgentStatus('idle');
-        setTimeout(() => startRecognition(), 120);
+        setTimeout(() => startRecognitionRef.current?.(), 150);
       }
     };
 
@@ -300,15 +350,10 @@ export function AgentProvider({ children }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speak]);
 
-  // Restart mic when idle (e.g. after speaking)
-  useEffect(() => {
-    if (agentStatus === 'idle' && stateRef.current.isContinuous && !stateRef.current.isSpeaking && !stateRef.current.isProcessing) {
-      const t = setTimeout(() => startRecognition(), 200);
-      return () => clearTimeout(t);
-    }
-  }, [agentStatus, startRecognition]);
+  // Keep startRecognition ref up-to-date (used by speak() callback and onerror)
+  useEffect(() => { startRecognitionRef.current = startRecognition; }, [startRecognition]);
 
-  // Keep a ref to stopListening so dispatchToolCall can call it
+  // ── Stop listening ─────────────────────────────────────────────────────────
   const stopListeningRef = useRef(null);
   const stopListening = useCallback(() => {
     stateRef.current.isContinuous  = false;
@@ -325,29 +370,38 @@ export function AgentProvider({ children }) {
   }, []);
   useEffect(() => { stopListeningRef.current = stopListening; }, [stopListening]);
 
+  // ── Toggle KIRA on/off ─────────────────────────────────────────────────────
   const toggleAgent = useCallback(() => {
     if (stateRef.current.isContinuous || agentStatus !== 'idle') {
       stopListening();
     } else {
       stateRef.current.isContinuous = true;
       setIsContinuous(true);
-      const greetings = ["Hey! I'm Kira. What can I help with?", "Hi! Kira here. Go ahead!", "Hey! What do you need?"];
+      const greetings = [
+        "Hey! I'm Kira. What can I help with?",
+        "Hi! Kira here. Go ahead!",
+        "Hey! What do you need?",
+      ];
       const greeting = greetings[Math.floor(Math.random() * greetings.length)];
       updateReplyAndHistory(greeting);
-      speak(greeting, () => startRecognition());
+      // speak() will auto-start mic when it finishes (via onEndCallback)
+      speak(greeting, () => startRecognitionRef.current?.());
     }
-  }, [agentStatus, stopListening, speak, startRecognition, updateReplyAndHistory]);
+  }, [agentStatus, stopListening, speak, updateReplyAndHistory]);
 
+  // ── Preload voices on mount ────────────────────────────────────────────────
   useEffect(() => {
     window.speechSynthesis.getVoices();
     window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
   }, []);
 
-  const registerArticles  = useCallback((articles) => {
-    fullArticlesRef.current = articles || [];
+  // ── Article / Map registration ─────────────────────────────────────────────
+  const registerArticles = useCallback((articles) => {
+    fullArticlesRef.current  = articles || [];
     articleTitlesRef.current = (articles || []).map(a => typeof a === 'string' ? a : a.title);
     readArticlesRef.current  = new Set();
   }, []);
+
   const registerMapSearch = useCallback((handler) => {
     mapSearchHandlerRef.current = handler;
     return () => { mapSearchHandlerRef.current = null; };
@@ -355,8 +409,11 @@ export function AgentProvider({ children }) {
 
   return (
     <AgentContext.Provider value={{
-      isListening, agentStatus, lastTranscript, lastReply, interimText,
-      toggleAgent, startListening: startRecognition, stopListening,
+      isListening, isContinuous, agentStatus,
+      lastTranscript, lastReply, interimText,
+      toggleAgent,
+      startListening: startRecognition,
+      stopListening,
       registerArticles, registerMapSearch, speak,
       voiceGender, setVoiceGender,
     }}>
