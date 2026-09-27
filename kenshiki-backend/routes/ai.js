@@ -199,7 +199,7 @@ ${message}
         }));
 
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.1-70b-versatile',
+            model: 'llama3-8b-8192',
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
                 ...formattedHistory,
@@ -291,7 +291,7 @@ Format the output STRICTLY in standard Markdown using this exact structure:
     try {
         const groq = new Groq({ apiKey: API_KEY });
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.1-70b-versatile',
+            model: 'llama3-8b-8192',
             messages: [
                 { role: 'system', content: 'You are an elite intelligence analyst. Always respond in clean Markdown. Never wrap your response in code fences.' },
                 { role: 'user', content: prompt },
@@ -352,7 +352,7 @@ router.post('/ai/voice', async (req, res) => {
         const trimmedHistory = history.slice(-20);
 
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.1-70b-versatile',
+            model: 'llama3-8b-8192',
             messages: [
                 { role: 'system', content: VOICE_SYSTEM_PROMPT },
                 { role: 'system', content: contextMsg },
@@ -408,7 +408,7 @@ Content: ${content || ''}`;
     try {
         const groq = new Groq({ apiKey: API_KEY });
         const completion = await groq.chat.completions.create({
-            model: 'llama-3.1-70b-versatile',
+            model: 'llama3-8b-8192',
             messages: [
                 { role: 'user', content: prompt }
             ],
