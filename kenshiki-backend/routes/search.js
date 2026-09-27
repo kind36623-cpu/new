@@ -63,7 +63,7 @@ INSTRUCTIONS:
     }));
 
     const completion = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-70b-versatile',
         messages: [
             { role: 'system', content: 'You are a helpful, friendly AI assistant. Be concise, use emojis, simple English and bold for key words. Always include <reasoning> block first.' },
             ...formattedHistory,
